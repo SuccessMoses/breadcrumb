@@ -1,6 +1,6 @@
-# VueJS Frontend Template
+# Breadcrumb
 
-This template should be used as a starting point for creating a new plugin with a VueJS frontend.
+Breadcrumb is a Caido plugin. It is still under development.
 
 ## Features
 
