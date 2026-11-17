@@ -134,7 +134,7 @@ const deleteTarget = () => {
   const target = extendTarget.value;
   if (target === undefined) return;
   const confirmed = window.confirm(
-    `Delete "${target.name}" and every sequence under it?`,
+    `Delete "${workspace.sequenceLabel(target)}" and every sequence under it?`,
   );
   if (!confirmed) return;
   const removed = workspace.deleteSequence(target.id);
@@ -157,7 +157,7 @@ const rerenderTarget = () => {
   const target = extendTarget.value;
   if (target === undefined) return;
   const confirmed = window.confirm(
-    `Re-render "${target.name}" and every sequence under it from its templates? Manual step edits will be replaced.`,
+    `Re-render "${workspace.sequenceLabel(target)}" and every sequence under it from its templates? Manual step edits will be replaced.`,
   );
   if (!confirmed) return;
   const { sequences, steps } = workspace.rerenderSequence(target.id);
@@ -328,7 +328,9 @@ const extendWith = (template: RequestTemplate) => {
           class="fas fa-turn-down-right text-surface-500"
         />
         <i v-else class="fas fa-folder text-surface-500" />
-        <span class="truncate">{{ row.sequence.name }}</span>
+        <span class="truncate">{{
+          workspace.sequenceLabel(row.sequence)
+        }}</span>
         <span
           v-if="!filtering && isCollapsed(row.sequence.id)"
           class="text-xs text-surface-500 whitespace-nowrap"
@@ -346,7 +348,7 @@ const extendWith = (template: RequestTemplate) => {
     <Dialog
       v-model:visible="pickerVisible"
       modal
-      :header="`Extend ${extendTarget?.name ?? ''}`"
+      :header="`Extend ${extendTarget === undefined ? '' : workspace.sequenceLabel(extendTarget)}`"
       :style="{ width: '40rem' }"
     >
       <div class="flex flex-col gap-2">

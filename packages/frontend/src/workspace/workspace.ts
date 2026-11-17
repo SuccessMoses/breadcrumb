@@ -66,6 +66,7 @@ export type Workspace = {
   setTemplateText: (templateId: string, text: string) => void;
   resetTemplateText: (templateId: string) => void;
   templateAlias: (template: RequestTemplate) => string;
+  sequenceLabel: (sequence: Sequence) => string;
   setAlias: (templateId: string, alias: string) => void;
 };
 
@@ -481,6 +482,16 @@ export const createWorkspace = (
   const templateAlias = (template: RequestTemplate) =>
     state.aliases[template.id] ?? defaultAlias(template);
 
+  // A sequence is labelled by the method and path of the template its last
+  // step came from, the same as in the Requests list. The root has no steps.
+  const sequenceLabel = (sequence: Sequence) => {
+    const last = sequence.steps[sequence.steps.length - 1];
+    const template =
+      last === undefined ? undefined : templatesById.value.get(last.templateId);
+    if (template === undefined) return sequence.name;
+    return `${template.method} ${template.path.replace(/\?.*$/, "")}`;
+  };
+
   const setAlias = (templateId: string, alias: string) => {
     state.aliases[templateId] = alias;
   };
@@ -511,6 +522,7 @@ export const createWorkspace = (
     setTemplateText,
     resetTemplateText,
     templateAlias,
+    sequenceLabel,
     setAlias,
   };
 };
