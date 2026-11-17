@@ -7,6 +7,7 @@ import { computed, ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
+import { methodColor } from "@/requests/display";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
@@ -328,9 +329,17 @@ const extendWith = (template: RequestTemplate) => {
           class="fas fa-turn-down-right text-surface-500"
         />
         <i v-else class="fas fa-folder text-surface-500" />
-        <span class="truncate">{{
-          workspace.sequenceLabel(row.sequence)
-        }}</span>
+        <span
+          v-if="workspace.sequenceMethod(row.sequence) !== undefined"
+          class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
+          :style="{
+            backgroundColor: methodColor(
+              workspace.sequenceMethod(row.sequence) ?? '',
+            ),
+          }"
+          >{{ workspace.sequenceMethod(row.sequence) }}</span
+        >
+        <span class="truncate">{{ workspace.sequencePath(row.sequence) }}</span>
         <span
           v-if="!filtering && isCollapsed(row.sequence.id)"
           class="text-xs text-surface-500 whitespace-nowrap"

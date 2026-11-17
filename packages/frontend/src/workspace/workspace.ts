@@ -8,6 +8,7 @@ import {
   watch,
 } from "vue";
 
+import { displayPath } from "@/requests/display";
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
 
@@ -67,6 +68,8 @@ export type Workspace = {
   resetTemplateText: (templateId: string) => void;
   templateAlias: (template: RequestTemplate) => string;
   sequenceLabel: (sequence: Sequence) => string;
+  sequenceMethod: (sequence: Sequence) => string | undefined;
+  sequencePath: (sequence: Sequence) => string;
   setAlias: (templateId: string, alias: string) => void;
 };
 
@@ -484,12 +487,23 @@ export const createWorkspace = (
 
   // A sequence is labelled by the method and path of the template its last
   // step came from, the same as in the Requests list. The root has no steps.
-  const sequenceLabel = (sequence: Sequence) => {
+  const sequenceTemplate = (sequence: Sequence) => {
     const last = sequence.steps[sequence.steps.length - 1];
-    const template =
-      last === undefined ? undefined : templatesById.value.get(last.templateId);
-    if (template === undefined) return sequence.name;
-    return `${template.method} ${template.path.replace(/\?.*$/, "")}`;
+    return last === undefined
+      ? undefined
+      : templatesById.value.get(last.templateId);
+  };
+  const sequenceMethod = (sequence: Sequence) =>
+    sequenceTemplate(sequence)?.method;
+  const sequencePath = (sequence: Sequence) => {
+    const template = sequenceTemplate(sequence);
+    return template === undefined ? sequence.name : displayPath(template);
+  };
+  const sequenceLabel = (sequence: Sequence) => {
+    const method = sequenceMethod(sequence);
+    return method === undefined
+      ? sequence.name
+      : `${method} ${sequencePath(sequence)}`;
   };
 
   const setAlias = (templateId: string, alias: string) => {
@@ -523,6 +537,8 @@ export const createWorkspace = (
     resetTemplateText,
     templateAlias,
     sequenceLabel,
+    sequenceMethod,
+    sequencePath,
     setAlias,
   };
 };
