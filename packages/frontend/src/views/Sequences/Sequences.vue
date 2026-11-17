@@ -90,6 +90,21 @@ const sendSteps = async (steps: SequenceStep[]) => {
   sending.value = false;
 };
 
+// Same as rerendering from the Tree: the selected sequence and everything under it
+const rerenderSequence = () => {
+  const sequence = workspace.selectedSequence.value;
+  if (sequence === undefined) return;
+  const confirmed = window.confirm(
+    `Re-render "${sequence.name}" and every sequence under it from its templates? Manual step edits will be replaced.`,
+  );
+  if (!confirmed) return;
+  const { sequences, steps } = workspace.rerenderSequence(sequence.id);
+  sdk.window.showToast(
+    `Rendered ${steps} step(s) in ${sequences} sequence(s)`,
+    { variant: "success" },
+  );
+};
+
 const sendStep = () => {
   const step = selectedStep.value;
   if (step !== undefined) void sendSteps([step]);
@@ -241,6 +256,14 @@ onMounted(() => {
               size="small"
               :disabled="selectedStep === undefined"
               @click="saveStep"
+            />
+            <Button
+              label="Rerender"
+              size="small"
+              severity="secondary"
+              icon="fas fa-rotate"
+              :disabled="workspace.selectedSequence.value === undefined"
+              @click="rerenderSequence"
             />
             <Button
               label="Send step"
