@@ -11,11 +11,15 @@ const HEAD_END = /\r?\n\r?\n/;
 const byteLength = (text: string) =>
   encodeURIComponent(text).replace(/%[0-9A-F]{2}/g, "x").length;
 
-// The raw text is sent as written. A body without a matching Content-Length is
-// read by the server as empty, and the body is then parsed as a second request.
-const withContentLength = (raw: string) => {
+// The raw text is sent as written, with two repairs. A head that does not end
+// with an empty line leaves the server waiting for more headers until it times
+// out, which is what a body-less request saved with a single trailing newline
+// looks like. A body without a matching Content-Length is read by the server as
+// empty, and the body is then parsed as a second request.
+const normalizeRaw = (raw: string) => {
   const end = HEAD_END.exec(raw);
-  if (end === null) return raw;
+  if (end === null) return `${raw.replace(/(?:\r?\n)+$/, "")}\r\n\r\n`;
+
   const head = raw.slice(0, end.index);
   const body = raw.slice(end.index + end[0].length);
   if (body === "") return raw;
@@ -40,7 +44,7 @@ export async function sendRaw(sdk: SDK, raw: string): Promise<Result<string>> {
     return err("Request has no Host header");
 
   const spec = new RequestSpecRaw(`http://${host}`);
-  spec.setRaw(withContentLength(raw));
+  spec.setRaw(normalizeRaw(raw));
   try {
     const { response } = await sdk.requests.send(spec);
     return ok(response.getRaw().toText());
