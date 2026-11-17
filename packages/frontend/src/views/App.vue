@@ -7,6 +7,7 @@ import Tabs from "primevue/tabs";
 
 import { Requests } from "./Requests";
 import { Sequences } from "./Sequences";
+import { Tree } from "./Tree";
 
 import { useSDK } from "@/plugins/sdk";
 import { createWorkspace } from "@/workspace/workspace";
@@ -20,6 +21,7 @@ const workspace = createWorkspace(sdk);
     <TabList>
       <Tab value="requests">Requests</Tab>
       <Tab value="sequences">Sequences</Tab>
+      <Tab value="tree">Tree</Tab>
     </TabList>
     <TabPanels class="flex-1 min-h-0 p-0">
       <TabPanel value="requests" class="h-full"
@@ -27,6 +29,9 @@ const workspace = createWorkspace(sdk);
       /></TabPanel>
       <TabPanel value="sequences" class="h-full"
         ><Sequences :workspace="workspace"
+      /></TabPanel>
+      <TabPanel value="tree" class="h-full"
+        ><Tree :workspace="workspace"
       /></TabPanel>
     </TabPanels>
   </Tabs>

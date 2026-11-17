@@ -77,11 +77,16 @@ const onPayloadInput = (key: string, event: Event) => {
   workspace.setPayload(id, key, (event.target as HTMLInputElement).value);
 };
 
-const addToSequence = () => {
-  const sequence = workspace.selectedSequence.value;
-  const template = selectedTemplate.value;
-  if (sequence === undefined || template === undefined) return;
-  workspace.extendSequence(sequence.id, template.id, preview.value);
+const aliasValue = computed(() =>
+  selectedTemplate.value === undefined
+    ? ""
+    : workspace.templateAlias(selectedTemplate.value),
+);
+
+const onAliasInput = (event: Event) => {
+  const id = selectedTemplateId.value;
+  if (id === undefined) return;
+  workspace.setAlias(id, (event.target as HTMLInputElement).value);
 };
 
 const onFileChange = async (event: Event) => {
@@ -127,18 +132,6 @@ onMounted(() => {
         class="hidden"
         @change="onFileChange"
       />
-      <span class="text-sm text-surface-400">
-        <template v-if="workspace.selectedSequence.value">
-          Adding to
-          <span class="text-surface-100">{{
-            workspace.selectedSequence.value.name
-          }}</span>
-        </template>
-        <template v-else
-          >Select a sequence in the Sequences tab to add requests to
-          it</template
-        >
-      </span>
     </div>
 
     <Splitter layout="horizontal" class="flex-1 min-h-0">
@@ -172,8 +165,12 @@ onMounted(() => {
             </div>
           </template>
           <Column field="method" header="Method" style="width: 6rem" />
+          <Column header="Alias">
+            <template #body="{ data }">{{
+              workspace.templateAlias(data)
+            }}</template>
+          </Column>
           <Column field="url" header="URL" />
-          <Column field="summary" header="Summary" />
         </DataTable>
       </SplitterPanel>
 
@@ -197,14 +194,13 @@ onMounted(() => {
               :disabled="selectedTemplate === undefined"
               @click="reroll"
             />
-            <Button
-              label="Add to sequence"
+            <InputText
+              :model-value="aliasValue"
+              :disabled="selectedTemplate === undefined"
+              placeholder="Alias"
               size="small"
-              :disabled="
-                selectedTemplate === undefined ||
-                workspace.selectedSequence.value === undefined
-              "
-              @click="addToSequence"
+              class="w-56"
+              @input="onAliasInput"
             />
           </div>
         </div>
