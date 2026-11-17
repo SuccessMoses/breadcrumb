@@ -19,6 +19,7 @@ const sdk = useSDK();
 
 const fileInput = ref<HTMLInputElement>();
 const selectedTemplateId = ref<string>();
+const search = ref("");
 const preview = ref("");
 const previewHost = ref<HTMLElement>();
 let previewEditor: HttpEditor | undefined;
@@ -26,6 +27,19 @@ let previewEditor: HttpEditor | undefined;
 const selectedTemplate = computed(() => {
   const id = selectedTemplateId.value;
   return id === undefined ? undefined : workspace.templatesById.value.get(id);
+});
+
+const filteredTemplates = computed(() => {
+  const query = search.value.trim().toLowerCase();
+  if (query === "") return workspace.state.templates;
+  return workspace.state.templates.filter((template) =>
+    [
+      template.method,
+      template.url,
+      template.summary,
+      template.operationId,
+    ].some((field) => (field ?? "").toLowerCase().includes(query)),
+  );
 });
 
 const payloadRows = computed(() =>
@@ -129,8 +143,20 @@ onMounted(() => {
 
     <Splitter layout="horizontal" class="flex-1 min-h-0">
       <SplitterPanel :size="40" :min-size="20" class="flex flex-col min-h-0">
+        <div class="flex items-center gap-2 pb-2">
+          <InputText
+            v-model="search"
+            placeholder="Search method, URL, summary, operationId"
+            size="small"
+            class="flex-1"
+          />
+          <span class="text-xs text-surface-500 whitespace-nowrap">
+            {{ filteredTemplates.length }} /
+            {{ workspace.state.templates.length }}
+          </span>
+        </div>
         <DataTable
-          :value="workspace.state.templates"
+          :value="filteredTemplates"
           data-key="id"
           selection-mode="single"
           :selection="selectedTemplate"
