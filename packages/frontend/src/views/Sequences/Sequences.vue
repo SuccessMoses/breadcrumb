@@ -4,9 +4,9 @@ import InputText from "primevue/inputtext";
 import Select from "primevue/select";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
-import Textarea from "primevue/textarea";
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
+import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
 import { useSDK } from "@/plugins/sdk";
 import { buildRawRequest } from "@/requests/rawRequest";
 import type { Workspace } from "@/workspace/workspace";
@@ -16,7 +16,9 @@ const sdk = useSDK();
 
 const newName = ref("");
 const selectedStepId = ref<string>();
-const requestText = ref("");
+const requestHost = ref<HTMLElement>();
+const responseHost = ref<HTMLElement>();
+let requestEditor: HttpEditor | undefined;
 
 const sequenceOptions = computed(() =>
   workspace.rows.value.map((row) => ({
@@ -50,15 +52,20 @@ const createSequence = () => {
 const saveStep = () => {
   const sequence = workspace.selectedSequence.value;
   const step = selectedStep.value;
-  if (sequence === undefined || step === undefined) return;
-  workspace.saveStepRequest(sequence.id, step.id, requestText.value);
+  if (
+    sequence === undefined ||
+    step === undefined ||
+    requestEditor === undefined
+  )
+    return;
+  workspace.saveStepRequest(sequence.id, step.id, requestEditor.getText());
   sdk.window.showToast("Step saved", { variant: "success" });
 };
 
 const resetStep = () => {
   const template = stepTemplate.value;
   if (template === undefined) return;
-  requestText.value = buildRawRequest(template);
+  requestEditor?.setText(buildRawRequest(template));
 };
 
 watch(
@@ -69,13 +76,19 @@ watch(
   { immediate: true },
 );
 
-watch(
-  selectedStep,
-  (step) => {
-    requestText.value = step === undefined ? "" : step.request;
-  },
-  { immediate: true },
-);
+watch(selectedStep, (step) => {
+  requestEditor?.setText(step === undefined ? "" : step.request);
+});
+
+onMounted(() => {
+  if (requestHost.value !== undefined) {
+    requestEditor = createHttpEditor(requestHost.value, false);
+    requestEditor.setText(selectedStep.value?.request ?? "");
+  }
+  if (responseHost.value !== undefined) {
+    createHttpEditor(responseHost.value, true);
+  }
+});
 </script>
 
 <template>
@@ -176,12 +189,10 @@ watch(
             class="min-h-0 flex flex-col"
           >
             <div class="px-3 py-1 text-xs text-surface-500">Request</div>
-            <Textarea
-              v-model="requestText"
-              :disabled="selectedStep === undefined"
-              spellcheck="false"
-              class="flex-1 min-h-0 w-full font-mono text-sm"
-              :pt="{ root: { class: 'h-full resize-none' } }"
+            <div
+              v-show="selectedStep !== undefined"
+              ref="requestHost"
+              class="flex-1 min-h-0"
             />
           </SplitterPanel>
           <SplitterPanel
@@ -192,13 +203,7 @@ watch(
             <div class="px-3 py-1 text-xs text-surface-500">
               Response (not sent)
             </div>
-            <Textarea
-              value=""
-              readonly
-              spellcheck="false"
-              class="flex-1 min-h-0 w-full font-mono text-sm"
-              :pt="{ root: { class: 'h-full resize-none' } }"
-            />
+            <div ref="responseHost" class="flex-1 min-h-0" />
           </SplitterPanel>
         </Splitter>
       </SplitterPanel>
