@@ -34,13 +34,6 @@ const selectedStep = computed(() =>
   ),
 );
 
-const stepTemplate = computed(() => {
-  const step = selectedStep.value;
-  return step === undefined
-    ? undefined
-    : workspace.templatesById.value.get(step.templateId);
-});
-
 const requestLine = (request: string) => request.split(/\r?\n/)[0];
 
 const toCrlf = (text: string) => text.replace(/\r?\n/g, "\r\n");
@@ -61,17 +54,6 @@ const saveSelectedEdits = () => {
     toCrlf(requestEditor.getText()),
   );
   return true;
-};
-
-const saveStep = () => {
-  if (saveSelectedEdits())
-    sdk.window.showToast("Step saved", { variant: "success" });
-};
-
-const resetStep = () => {
-  const template = stepTemplate.value;
-  if (template === undefined) return;
-  requestEditor?.setText(workspace.renderTemplate(template.id) ?? "");
 };
 
 const sendSteps = async (steps: SequenceStep[]) => {
@@ -194,8 +176,12 @@ onMounted(() => {
     </div>
 
     <Splitter layout="horizontal" class="flex-1 min-h-0">
-      <SplitterPanel :size="25" :min-size="15" class="flex flex-col min-h-0">
-        <div class="flex-1 overflow-auto">
+      <SplitterPanel
+        :size="25"
+        :min-size="15"
+        class="flex flex-col min-h-0 min-w-0 overflow-hidden"
+      >
+        <div class="flex-1 min-w-0 overflow-auto">
           <div
             v-if="workspace.selectedSequence.value === undefined"
             class="p-3 text-surface-400"
@@ -213,7 +199,7 @@ onMounted(() => {
             []"
             :key="step.id"
             type="button"
-            class="w-full flex gap-2 px-3 py-2 text-left text-sm hover:bg-surface-800"
+            class="w-full min-w-0 flex gap-2 px-3 py-2 text-left text-sm hover:bg-surface-800"
             :class="
               step.id === selectedStepId
                 ? 'bg-surface-800 text-surface-100'
@@ -223,7 +209,9 @@ onMounted(() => {
             @dblclick="openTemplate(step)"
           >
             <span class="text-surface-500">{{ index + 1 }}</span>
-            <span class="truncate">{{ requestLine(step.request) }}</span>
+            <span class="min-w-0 truncate" :title="requestLine(step.request)">{{
+              requestLine(step.request)
+            }}</span>
           </button>
         </div>
       </SplitterPanel>
@@ -232,8 +220,10 @@ onMounted(() => {
         :size="75"
         class="flex flex-col min-h-0 min-w-0 overflow-hidden"
       >
-        <div class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-          <span class="text-surface-400">
+        <div
+          class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+        >
+          <span class="whitespace-nowrap text-surface-400">
             <template v-if="selectedStep"
               >Step
               {{
@@ -244,19 +234,6 @@ onMounted(() => {
             >
           </span>
           <div class="flex gap-2">
-            <Button
-              label="Reset to template"
-              size="small"
-              severity="secondary"
-              :disabled="stepTemplate === undefined"
-              @click="resetStep"
-            />
-            <Button
-              label="Save"
-              size="small"
-              :disabled="selectedStep === undefined"
-              @click="saveStep"
-            />
             <Button
               label="Rerender"
               size="small"
