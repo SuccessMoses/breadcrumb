@@ -1,13 +1,16 @@
 import type { RequestTemplate, Sequence, SequenceStep } from "shared";
 import { computed, type ComputedRef, reactive, watch } from "vue";
 
-import { buildRawRequest } from "@/requests/rawRequest";
+import { renderRequest } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
+
+type Payloads = Record<string, Record<string, string>>;
 
 type WorkspaceState = {
   templates: RequestTemplate[];
   sequences: Sequence[];
   selectedSequenceId: string | undefined;
+  payloads: Payloads;
 };
 
 type SequenceRow = {
@@ -22,7 +25,11 @@ export type Workspace = {
   rows: ComputedRef<SequenceRow[]>;
   importTemplates: (templates: RequestTemplate[]) => void;
   createSequence: (name: string) => void;
-  extendSequence: (parentId: string, templateId: string) => void;
+  extendSequence: (
+    parentId: string,
+    templateId: string,
+    request: string,
+  ) => void;
   selectSequence: (id: string) => void;
   saveStepRequest: (
     sequenceId: string,
@@ -34,12 +41,14 @@ export type Workspace = {
     stepId: string,
     response: string,
   ) => void;
+  setPayload: (templateId: string, key: string, value: string) => void;
 };
 
 const EMPTY: WorkspaceState = {
   templates: [],
   sequences: [],
   selectedSequenceId: undefined,
+  payloads: {},
 };
 
 const isState = (value: unknown): value is WorkspaceState =>
@@ -67,6 +76,25 @@ const isStep = (value: unknown): value is SequenceStep =>
   typeof value.templateId === "string" &&
   typeof value.request === "string";
 
+const restorePayloads = (value: unknown): Payloads => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value).map(([templateId, fields]) => [
+      templateId,
+      typeof fields === "object" && fields !== null
+        ? Object.fromEntries(
+            Object.entries(fields).filter(
+              (entry): entry is [string, string] =>
+                typeof entry[1] === "string",
+            ),
+          )
+        : {},
+    ]),
+  );
+};
+
 const restoreSequences = (
   values: unknown[],
   templates: RequestTemplate[],
@@ -90,7 +118,8 @@ const restoreSequences = (
       const steps = value.templateIds.flatMap((templateId): SequenceStep[] => {
         if (typeof templateId !== "string") return [];
         const template = templates.find((t) => t.id === templateId);
-        const request = template === undefined ? "" : buildRawRequest(template);
+        const request =
+          template === undefined ? "" : renderRequest(template, {});
         return [{ id: newId(), templateId, request, response: undefined }];
       });
       return [{ id: value.id, name: value.name, parentId, steps }];
@@ -109,6 +138,9 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
       typeof stored.selectedSequenceId === "string"
         ? stored.selectedSequenceId
         : undefined;
+    state.payloads = restorePayloads(
+      hasKey(stored, "payloads") ? stored.payloads : undefined,
+    );
   }
 
   watch(
@@ -116,6 +148,7 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
       templates: state.templates,
       sequences: state.sequences,
       selectedSequenceId: state.selectedSequenceId,
+      payloads: state.payloads,
     }),
     (snapshot) => sdk.storage.set(snapshot),
     { deep: true },
@@ -154,10 +187,13 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     state.selectedSequenceId = sequence.id;
   };
 
-  const extendSequence = (parentId: string, templateId: string) => {
+  const extendSequence = (
+    parentId: string,
+    templateId: string,
+    request: string,
+  ) => {
     const parent = state.sequences.find((s) => s.id === parentId);
-    const template = templatesById.value.get(templateId);
-    if (parent === undefined || template === undefined) return;
+    if (parent === undefined) return;
 
     const inherited: SequenceStep[] = parent.steps.map((step) => ({
       ...step,
@@ -167,7 +203,7 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     const step: SequenceStep = {
       id: newId(),
       templateId,
-      request: buildRawRequest(template),
+      request,
       response: undefined,
     };
     const childCount = state.sequences.filter(
@@ -212,6 +248,13 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     step.response = response;
   };
 
+  const setPayload = (templateId: string, key: string, value: string) => {
+    state.payloads[templateId] = {
+      ...state.payloads[templateId],
+      [key]: value,
+    };
+  };
+
   return {
     state,
     templatesById,
@@ -223,5 +266,6 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     selectSequence,
     saveStepRequest,
     saveStepResponse,
+    setPayload,
   };
 };

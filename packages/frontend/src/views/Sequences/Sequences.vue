@@ -9,7 +9,7 @@ import { computed, onMounted, ref, watch } from "vue";
 
 import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
 import { useSDK } from "@/plugins/sdk";
-import { buildRawRequest } from "@/requests/rawRequest";
+import { renderRequest } from "@/requests/renderRequest";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
@@ -80,7 +80,7 @@ const saveStep = () => {
 const resetStep = () => {
   const template = stepTemplate.value;
   if (template === undefined) return;
-  requestEditor?.setText(buildRawRequest(template));
+  requestEditor?.setText(renderRequest(template, {}));
 };
 
 const sendSteps = async (steps: SequenceStep[]) => {
