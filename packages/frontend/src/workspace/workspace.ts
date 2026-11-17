@@ -175,9 +175,10 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
 
   const ensureRoot = () => {
     const roots = state.sequences.filter((s) => s.parentId === undefined);
-    const existing = roots.find(
-      (s) => s.name === ROOT_NAME && s.steps.length === 0,
-    );
+    const existing =
+      roots.find((s) => s.name === ROOT_NAME) ??
+      roots.find((s) => s.steps.length === 0);
+    if (existing !== undefined) existing.name = ROOT_NAME;
     const root: Sequence = existing ?? {
       id: newId(),
       name: ROOT_NAME,
@@ -196,6 +197,41 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     if (!selected) state.selectedSequenceId = root.id;
   };
   ensureRoot();
+
+  // Name every sequence from its parent's path plus the alias of the template
+  // that created it (its last step), so saved data gets the same names as new ones.
+  const relabel = () => {
+    const root = state.sequences.find(
+      (s) => s.parentId === undefined && s.name === ROOT_NAME,
+    );
+    if (root === undefined) return;
+    const walk = (parent: Sequence) => {
+      const base = parent.name === ROOT_NAME ? "" : parent.name;
+      const taken = new Set<string>();
+      for (const child of state.sequences.filter(
+        (s) => s.parentId === parent.id,
+      )) {
+        const last = child.steps[child.steps.length - 1];
+        const template =
+          last === undefined
+            ? undefined
+            : state.templates.find((t) => t.id === last.templateId);
+        if (template !== undefined) {
+          const alias = state.aliases[template.id] ?? defaultAlias(template);
+          const name = `${base}/${alias}`;
+          let unique = name;
+          for (let copy = 2; taken.has(unique); copy += 1) {
+            unique = `${name} ${copy}`;
+          }
+          taken.add(unique);
+          child.name = unique;
+        }
+        walk(child);
+      }
+    };
+    walk(root);
+  };
+  relabel();
 
   const templatesById = computed(
     () => new Map(state.templates.map((t) => [t.id, t])),
