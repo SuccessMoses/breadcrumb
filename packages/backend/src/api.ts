@@ -10,7 +10,7 @@ export async function sendRaw(sdk: SDK, raw: string): Promise<Result<string>> {
   if (host === undefined || host === "")
     return err("Request has no Host header");
 
-  const spec = new RequestSpecRaw(`https://${host}`);
+  const spec = new RequestSpecRaw(`http://${host}`);
   spec.setRaw(raw);
   try {
     const { response } = await sdk.requests.send(spec);
