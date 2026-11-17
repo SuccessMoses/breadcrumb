@@ -110,6 +110,8 @@ const theme = EditorView.theme(
   {
     "&": {
       height: "100%",
+      width: "100%",
+      maxWidth: "100%",
       backgroundColor: "#1d1f24",
       color: "#d4d7dd",
       fontSize: "13px",

@@ -157,7 +157,10 @@ onMounted(() => {
         </div>
       </SplitterPanel>
 
-      <SplitterPanel :size="75" class="flex flex-col min-h-0">
+      <SplitterPanel
+        :size="75"
+        class="flex flex-col min-h-0 min-w-0 overflow-hidden"
+      >
         <div class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
           <span class="text-surface-400">
             <template v-if="selectedStep"
@@ -190,24 +193,27 @@ onMounted(() => {
           <SplitterPanel
             :size="50"
             :min-size="20"
-            class="min-h-0 flex flex-col"
+            class="min-h-0 min-w-0 flex flex-col overflow-hidden"
           >
             <div class="px-3 py-1 text-xs text-surface-500">Request</div>
             <div
               v-show="selectedStep !== undefined"
               ref="requestHost"
-              class="flex-1 min-h-0"
+              class="flex-1 min-h-0 min-w-0 overflow-hidden"
             />
           </SplitterPanel>
           <SplitterPanel
             :size="50"
             :min-size="20"
-            class="min-h-0 flex flex-col"
+            class="min-h-0 min-w-0 flex flex-col overflow-hidden"
           >
             <div class="px-3 py-1 text-xs text-surface-500">
               Response (not sent)
             </div>
-            <div ref="responseHost" class="flex-1 min-h-0" />
+            <div
+              ref="responseHost"
+              class="flex-1 min-h-0 min-w-0 overflow-hidden"
+            />
           </SplitterPanel>
         </Splitter>
       </SplitterPanel>
