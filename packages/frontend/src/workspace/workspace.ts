@@ -48,11 +48,63 @@ const isState = (value: unknown): value is WorkspaceState =>
 const newId = () =>
   `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 
+const hasKey = <K extends string>(
+  value: unknown,
+  key: K,
+): value is Record<K, unknown> =>
+  typeof value === "object" && value !== null && key in value;
+
+const isStep = (value: unknown): value is SequenceStep =>
+  hasKey(value, "id") &&
+  hasKey(value, "templateId") &&
+  hasKey(value, "request") &&
+  typeof value.id === "string" &&
+  typeof value.templateId === "string" &&
+  typeof value.request === "string";
+
+const restoreSequences = (
+  values: unknown[],
+  templates: RequestTemplate[],
+): Sequence[] =>
+  values.flatMap((value) => {
+    if (!hasKey(value, "id") || !hasKey(value, "name")) return [];
+    if (typeof value.id !== "string" || typeof value.name !== "string")
+      return [];
+    const parentId =
+      hasKey(value, "parentId") && typeof value.parentId === "string"
+        ? value.parentId
+        : undefined;
+    if (
+      hasKey(value, "steps") &&
+      Array.isArray(value.steps) &&
+      value.steps.every(isStep)
+    ) {
+      return [{ id: value.id, name: value.name, parentId, steps: value.steps }];
+    }
+    if (hasKey(value, "templateIds") && Array.isArray(value.templateIds)) {
+      const steps = value.templateIds.flatMap((templateId): SequenceStep[] => {
+        if (typeof templateId !== "string") return [];
+        const template = templates.find((t) => t.id === templateId);
+        const request = template === undefined ? "" : buildRawRequest(template);
+        return [{ id: newId(), templateId, request }];
+      });
+      return [{ id: value.id, name: value.name, parentId, steps }];
+    }
+    return [];
+  });
+
 export const createWorkspace = (sdk: FrontendSDK): Workspace => {
   const stored = sdk.storage.get();
-  const state = reactive<WorkspaceState>(
-    isState(stored) ? { ...EMPTY, ...stored } : { ...EMPTY },
-  );
+  const state = reactive<WorkspaceState>({ ...EMPTY });
+  if (isState(stored)) {
+    state.templates = stored.templates;
+    state.sequences = restoreSequences(stored.sequences, stored.templates);
+    state.selectedSequenceId =
+      hasKey(stored, "selectedSequenceId") &&
+      typeof stored.selectedSequenceId === "string"
+        ? stored.selectedSequenceId
+        : undefined;
+  }
 
   watch(
     () => ({
