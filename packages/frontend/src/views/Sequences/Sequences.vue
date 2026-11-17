@@ -40,7 +40,7 @@ const stepTemplate = computed(() => {
     : workspace.templatesById.value.get(step.templateId);
 });
 
-const requestLine = (request: string) => request.split("\r\n")[0];
+const requestLine = (request: string) => request.split(/\r?\n/)[0];
 
 const createSequence = () => {
   const name = newName.value.trim();
@@ -58,7 +58,11 @@ const saveStep = () => {
     requestEditor === undefined
   )
     return;
-  workspace.saveStepRequest(sequence.id, step.id, requestEditor.getText());
+  workspace.saveStepRequest(
+    sequence.id,
+    step.id,
+    requestEditor.getText().replace(/\r?\n/g, "\r\n"),
+  );
   sdk.window.showToast("Step saved", { variant: "success" });
 };
 
