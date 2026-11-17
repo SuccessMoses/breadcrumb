@@ -11,6 +11,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
 import { parseOpenApi } from "@/openapi/parseOpenApi";
 import { useSDK } from "@/plugins/sdk";
+import { compilePattern, sequenceText } from "@/query/sequenceText";
 import { payloadFields, renderRequest } from "@/requests/renderRequest";
 import type { Workspace } from "@/workspace/workspace";
 
@@ -23,6 +24,30 @@ const search = ref("");
 const preview = ref("");
 const previewHost = ref<HTMLElement>();
 let previewEditor: HttpEditor | undefined;
+
+const renderPattern = ref("");
+const renderMatch = computed(() => {
+  const text = renderPattern.value.trim();
+  return text === "" ? undefined : compilePattern(text);
+});
+const renderTargets = computed(() => {
+  const match = renderMatch.value;
+  if (match === undefined || match.kind === "error") return [];
+  return workspace.rows.value
+    .map((row) => row.sequence)
+    .filter((sequence) => match.regex.test(sequenceText(sequence)));
+});
+
+const renderOnTop = () => {
+  const template = selectedTemplate.value;
+  if (template === undefined) return;
+  // Snapshot the matches first: extending adds children that must not match again
+  const targetIds = renderTargets.value.map((sequence) => sequence.id);
+  for (const id of targetIds) workspace.extendSequence(id, template.id);
+  sdk.window.showToast(`Rendered on ${targetIds.length} sequence(s)`, {
+    variant: "success",
+  });
+};
 
 const selectedTemplate = computed(() => {
   const id = selectedTemplateId.value;
@@ -184,14 +209,6 @@ onMounted(() => {
             >
           </span>
           <div class="flex gap-2">
-            <Button
-              label="Re-roll"
-              size="small"
-              severity="secondary"
-              icon="fas fa-dice"
-              :disabled="selectedTemplate === undefined"
-              @click="reroll"
-            />
             <InputText
               :model-value="aliasValue"
               :disabled="selectedTemplate === undefined"
@@ -202,6 +219,34 @@ onMounted(() => {
             />
           </div>
         </div>
+
+        <div class="flex items-center gap-2 px-3 pb-2">
+          <InputText
+            v-model="renderPattern"
+            placeholder="Regex: sequences to render on top of, e.g. ^$"
+            size="small"
+            class="flex-1 font-mono"
+            spellcheck="false"
+          />
+          <span class="text-xs text-surface-500 whitespace-nowrap">
+            {{ renderTargets.length }} match
+          </span>
+          <Button
+            :label="`Render on top (${renderTargets.length})`"
+            size="small"
+            icon="fas fa-layer-group"
+            :disabled="
+              selectedTemplate === undefined || renderTargets.length === 0
+            "
+            @click="renderOnTop"
+          />
+        </div>
+        <p
+          v-if="renderMatch !== undefined && renderMatch.kind === 'error'"
+          class="px-3 pb-2 text-sm text-red-400"
+        >
+          Regex error: {{ renderMatch.message }}
+        </p>
 
         <Splitter layout="vertical" class="flex-1 min-h-0">
           <SplitterPanel
