@@ -25,6 +25,7 @@ export type Workspace = {
   importTemplates: (templates: RequestTemplate[]) => void;
   extendSequence: (parentId: string, templateId: string) => void;
   deleteSequence: (id: string) => number;
+  rerenderSequence: (id: string) => { sequences: number; steps: number };
   selectSequence: (id: string) => void;
   saveStepRequest: (
     sequenceId: string,
@@ -280,6 +281,38 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     state.selectedSequenceId = id;
   };
 
+  // Regenerates the request of every step in a sequence and everything under it
+  // from its template, with fresh {random} values. Hand-edited requests are
+  // replaced and their responses dropped, since they no longer match. Steps
+  // whose template is gone are left alone. Returns what was touched.
+  const rerenderSequence = (id: string) => {
+    const targets = new Set<string>();
+    const collect = (sequenceId: string) => {
+      targets.add(sequenceId);
+      for (const child of state.sequences) {
+        if (child.parentId === sequenceId) collect(child.id);
+      }
+    };
+    collect(id);
+
+    let steps = 0;
+    let sequences = 0;
+    for (const sequence of state.sequences) {
+      if (!targets.has(sequence.id)) continue;
+      let changed = false;
+      for (const step of sequence.steps) {
+        const request = renderTemplate(step.templateId);
+        if (request === undefined) continue;
+        step.request = request;
+        step.response = undefined;
+        steps += 1;
+        changed = true;
+      }
+      if (changed) sequences += 1;
+    }
+    return { sequences, steps };
+  };
+
   const findStep = (sequenceId: string, stepId: string) =>
     state.sequences
       .find((s) => s.id === sequenceId)
@@ -341,6 +374,7 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     importTemplates,
     extendSequence,
     deleteSequence,
+    rerenderSequence,
     selectSequence,
     saveStepRequest,
     saveStepResponse,

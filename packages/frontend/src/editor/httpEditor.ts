@@ -115,6 +115,9 @@ const theme = EditorView.theme(
       backgroundColor: "#1d1f24",
       color: "#d4d7dd",
       fontSize: "13px",
+      // Caido's app CSS disables selection on <body>; re-enable it here so text
+      // in read-only panes (responses) can be highlighted and copied.
+      userSelect: "text",
     },
     ".cm-scroller": {
       fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",

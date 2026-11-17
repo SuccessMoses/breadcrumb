@@ -23,7 +23,84 @@ const compiled = computed(() => {
   return text === "" ? undefined : compilePattern(text);
 });
 
-const visibleRows = computed(() => {
+// Ids of the sequences whose children are hidden.
+const collapsed = ref<Set<string>>(new Set());
+
+const childCounts = computed(() => {
+  const counts = new Map<string, number>();
+  for (const sequence of workspace.state.sequences) {
+    if (sequence.parentId === undefined) continue;
+    counts.set(sequence.parentId, (counts.get(sequence.parentId) ?? 0) + 1);
+  }
+  return counts;
+});
+
+const hasChildren = (id: string) => (childCounts.value.get(id) ?? 0) > 0;
+
+// Total number of sequences below each sequence, hidden when it is collapsed.
+const descendantCounts = computed(() => {
+  const childrenOf = new Map<string, string[]>();
+  const roots: string[] = [];
+  for (const sequence of workspace.state.sequences) {
+    if (sequence.parentId === undefined) {
+      roots.push(sequence.id);
+      continue;
+    }
+    const siblings = childrenOf.get(sequence.parentId);
+    if (siblings === undefined) {
+      childrenOf.set(sequence.parentId, [sequence.id]);
+    } else {
+      siblings.push(sequence.id);
+    }
+  }
+  const counts = new Map<string, number>();
+  const count = (id: string): number => {
+    const total = (childrenOf.get(id) ?? []).reduce(
+      (sum, childId) => sum + 1 + count(childId),
+      0,
+    );
+    counts.set(id, total);
+    return total;
+  };
+  for (const id of roots) count(id);
+  return counts;
+});
+
+const isCollapsed = (id: string) => collapsed.value.has(id);
+
+const toggleCollapsed = (id: string) => {
+  const next = new Set(collapsed.value);
+  if (!next.delete(id)) next.add(id);
+  collapsed.value = next;
+};
+
+const expandableIds = computed(() =>
+  workspace.state.sequences
+    .filter((sequence) => (childCounts.value.get(sequence.id) ?? 0) > 0)
+    .map((sequence) => sequence.id),
+);
+
+const collapseAll = () => {
+  collapsed.value = new Set(expandableIds.value);
+};
+
+const expandAll = () => {
+  collapsed.value = new Set();
+};
+
+// Expands every ancestor of a sequence, so a freshly created child is visible.
+const revealSequence = (id: string) => {
+  const byId = new Map(workspace.state.sequences.map((s) => [s.id, s]));
+  const next = new Set(collapsed.value);
+  let parentId = byId.get(id)?.parentId;
+  while (parentId !== undefined) {
+    next.delete(parentId);
+    parentId = byId.get(parentId)?.parentId;
+  }
+  collapsed.value = next;
+};
+
+const matchingRows = computed(() => {
   const match = compiled.value;
   if (match === undefined || match.kind === "error") {
     return workspace.rows.value;
@@ -31,6 +108,25 @@ const visibleRows = computed(() => {
   return workspace.rows.value.filter((row) =>
     match.regex.test(sequenceText(row.sequence)),
   );
+});
+
+// A regex search shows every match, so collapsing only applies without a filter.
+const filtering = computed(() => {
+  const match = compiled.value;
+  return match !== undefined && match.kind !== "error";
+});
+
+const visibleRows = computed(() => {
+  if (filtering.value) return matchingRows.value;
+  const rows: typeof matchingRows.value = [];
+  let skipBelow = -1;
+  for (const row of matchingRows.value) {
+    if (skipBelow !== -1 && row.depth > skipBelow) continue;
+    skipBelow = -1;
+    rows.push(row);
+    if (collapsed.value.has(row.sequence.id)) skipBelow = row.depth;
+  }
+  return rows;
 });
 
 const deleteTarget = () => {
@@ -46,6 +142,30 @@ const deleteTarget = () => {
   });
 };
 
+const subtreeStepCount = (id: string): number => {
+  const sequence = workspace.state.sequences.find((s) => s.id === id);
+  if (sequence === undefined) return 0;
+  const children = workspace.state.sequences.filter((s) => s.parentId === id);
+  return (
+    sequence.steps.length +
+    children.reduce((sum, child) => sum + subtreeStepCount(child.id), 0)
+  );
+};
+
+const rerenderTarget = () => {
+  const target = extendTarget.value;
+  if (target === undefined) return;
+  const confirmed = window.confirm(
+    `Re-render "${target.name}" and every sequence under it from its templates? Manual step edits will be replaced.`,
+  );
+  if (!confirmed) return;
+  const { sequences, steps } = workspace.rerenderSequence(target.id);
+  sdk.window.showToast(
+    `Rendered ${steps} step(s) in ${sequences} sequence(s)`,
+    { variant: "success" },
+  );
+};
+
 const menuItems = computed(() => [
   {
     label: "Extend",
@@ -54,6 +174,14 @@ const menuItems = computed(() => [
       pickerVisible.value = true;
       search.value = "";
     },
+  },
+  {
+    label: "Rerender",
+    icon: "fas fa-rotate",
+    disabled:
+      extendTarget.value === undefined ||
+      subtreeStepCount(extendTarget.value.id) === 0,
+    command: rerenderTarget,
   },
   {
     label: "Delete",
@@ -84,6 +212,8 @@ const extendWith = (template: RequestTemplate) => {
   const parent = extendTarget.value;
   if (parent === undefined) return;
   workspace.extendSequence(parent.id, template.id);
+  const childId = workspace.state.selectedSequenceId;
+  if (childId !== undefined) revealSequence(childId);
   pickerVisible.value = false;
 };
 </script>
@@ -102,6 +232,26 @@ const extendWith = (template: RequestTemplate) => {
         <span class="text-xs text-surface-500 whitespace-nowrap">
           {{ visibleRows.length }} / {{ workspace.rows.value.length }}
         </span>
+        <div class="flex items-center">
+          <button
+            type="button"
+            title="Collapse all"
+            class="px-1.5 py-1 text-surface-400 hover:text-surface-100 disabled:opacity-40 disabled:hover:text-surface-400"
+            :disabled="filtering || expandableIds.length === 0"
+            @click="collapseAll"
+          >
+            <i class="fas fa-angles-up" />
+          </button>
+          <button
+            type="button"
+            title="Expand all"
+            class="px-1.5 py-1 text-surface-400 hover:text-surface-100 disabled:opacity-40 disabled:hover:text-surface-400"
+            :disabled="filtering || collapsed.size === 0"
+            @click="expandAll"
+          >
+            <i class="fas fa-angles-down" />
+          </button>
+        </div>
       </div>
       <p
         v-if="compiled !== undefined && compiled.kind === 'error'"
@@ -151,12 +301,30 @@ const extendWith = (template: RequestTemplate) => {
         @click="workspace.selectSequence(row.sequence.id)"
         @contextmenu.prevent="openMenu($event, row.sequence)"
       >
+        <span
+          v-if="!filtering && hasChildren(row.sequence.id)"
+          class="w-4 shrink-0 cursor-pointer text-center text-surface-500 hover:text-surface-100"
+          :title="isCollapsed(row.sequence.id) ? 'Expand' : 'Collapse'"
+          @click.stop="toggleCollapsed(row.sequence.id)"
+        >
+          <i
+            class="fas fa-chevron-right text-xs transition-transform"
+            :class="{ 'rotate-90': !isCollapsed(row.sequence.id) }"
+          />
+        </span>
+        <span v-else class="w-4 shrink-0" />
         <i
           v-if="row.depth > 0"
           class="fas fa-turn-down-right text-surface-500"
         />
         <i v-else class="fas fa-folder text-surface-500" />
         <span class="truncate">{{ row.sequence.name }}</span>
+        <span
+          v-if="!filtering && isCollapsed(row.sequence.id)"
+          class="text-xs text-surface-500 whitespace-nowrap"
+        >
+          ({{ descendantCounts.get(row.sequence.id) }} hidden)
+        </span>
         <span class="ml-auto text-xs text-surface-500">
           {{ row.sequence.steps.length }} steps
         </span>

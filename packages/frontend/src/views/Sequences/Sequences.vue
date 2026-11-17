@@ -119,6 +119,15 @@ watch(
   },
 );
 
+// Rerendering the tree rewrites step requests in place, keeping the same step
+// object, so watch the text itself to keep the request editor in sync.
+watch(
+  () => selectedStep.value?.request,
+  (request) => {
+    requestEditor?.setText(request ?? "");
+  },
+);
+
 onMounted(() => {
   if (requestHost.value !== undefined) {
     requestEditor = createHttpEditor(requestHost.value, false);
