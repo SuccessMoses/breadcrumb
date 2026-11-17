@@ -27,6 +27,13 @@ const withContentLength = (raw: string) => {
   return `${withLength}${end[0]}${body}`;
 };
 
+export async function currentProjectId(
+  sdk: SDK,
+): Promise<Result<string | undefined>> {
+  const project = await sdk.projects.getCurrent();
+  return ok(project?.getId());
+}
+
 export async function sendRaw(sdk: SDK, raw: string): Promise<Result<string>> {
   const host = HOST_HEADER.exec(raw)?.[1]?.trim();
   if (host === undefined || host === "")

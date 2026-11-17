@@ -163,8 +163,34 @@ const restoreSequences = (
     return [];
   });
 
-export const createWorkspace = (sdk: FrontendSDK): Workspace => {
-  const stored = sdk.storage.get();
+// Storage holds one snapshot per Caido project, under "projects"
+const readRoot = (sdk: FrontendSDK): Record<string, unknown> => {
+  const value = sdk.storage.get();
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value));
+};
+
+// Each entry is checked by isState before it is used
+const readProjects = (
+  root: Record<string, unknown>,
+): Record<string, WorkspaceState> => {
+  const value = root.projects;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(value));
+};
+
+export const createWorkspace = (
+  sdk: FrontendSDK,
+  projectId: string,
+): Workspace => {
+  const root = readRoot(sdk);
+  // Data saved before projects existed is adopted by the project opened first
+  const legacy = !("projects" in root) && isState(root);
+  const stored = legacy ? root : readProjects(root)[projectId];
   const state = reactive<WorkspaceState>({ ...EMPTY });
   const focusStep = ref<string>();
   const setFocusStep = (stepId: string | undefined) => {
@@ -223,7 +249,12 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
       templateCollection: state.templateCollection,
       aliases: state.aliases,
     }),
-    (snapshot) => sdk.storage.set(snapshot),
+    (snapshot) => {
+      const current = readRoot(sdk);
+      sdk.storage.set({
+        projects: { ...readProjects(current), [projectId]: snapshot },
+      });
+    },
     { deep: true },
   );
 

@@ -4,18 +4,36 @@ import TabList from "primevue/tablist";
 import TabPanel from "primevue/tabpanel";
 import TabPanels from "primevue/tabpanels";
 import Tabs from "primevue/tabs";
-import { ref } from "vue";
+import { onMounted, onUnmounted, ref, shallowRef } from "vue";
 
 import { Requests } from "./Requests";
 import { Sequences } from "./Sequences";
 import { Tree } from "./Tree";
 
 import { useSDK } from "@/plugins/sdk";
-import { createWorkspace } from "@/workspace/workspace";
+import { createWorkspace, type Workspace } from "@/workspace/workspace";
 
 const sdk = useSDK();
-const workspace = createWorkspace(sdk);
+// Each Caido project gets its own workspace; it is rebuilt when the project changes
+const projectId = ref<string>();
+const workspace = shallowRef<Workspace>();
 const activeTab = ref("requests");
+
+const openProject = (id: string | undefined) => {
+  projectId.value = id;
+  workspace.value = id === undefined ? undefined : createWorkspace(sdk, id);
+};
+
+const projectListener = sdk.projects.onCurrentProjectChange((event) =>
+  openProject(event.projectId),
+);
+
+onMounted(async () => {
+  const result = await sdk.backend.currentProjectId();
+  openProject(result.kind === "Ok" ? result.value : undefined);
+});
+
+onUnmounted(() => projectListener.stop());
 
 // Opening a sequence from the Tree jumps to its view
 const showSequence = () => {
@@ -29,7 +47,15 @@ const showTemplate = () => {
 </script>
 
 <template>
-  <Tabs v-model:value="activeTab" class="h-full flex flex-col">
+  <div v-if="workspace === undefined" class="p-6 text-surface-400">
+    Open a Caido project to use Breadcrumb.
+  </div>
+  <Tabs
+    v-else
+    :key="projectId"
+    v-model:value="activeTab"
+    class="h-full flex flex-col"
+  >
     <TabList>
       <Tab value="requests">Requests</Tab>
       <Tab value="sequences">Sequences</Tab>
