@@ -26,6 +26,7 @@ export type Workspace = {
   rows: ComputedRef<SequenceRow[]>;
   importTemplates: (templates: RequestTemplate[]) => void;
   extendSequence: (parentId: string, templateId: string) => void;
+  deleteSequence: (id: string) => number;
   selectSequence: (id: string) => void;
   saveStepRequest: (
     sequenceId: string,
@@ -197,7 +198,6 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
         continue;
       }
       sequence.parentId = root.id;
-      sequence.name = `/${sequence.name.replace(/^\/+/, "")}`;
     }
     const selected = state.sequences.some(
       (s) => s.id === state.selectedSequenceId,
@@ -206,38 +206,19 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
   };
   ensureRoot();
 
-  // Name every sequence from its parent's path plus the alias of the template
-  // that created it (its last step), so saved data gets the same names as new ones.
+  // Name each sequence after the alias of the template that created it (its
+  // last step). Names are labels only; ids are what keep sequences apart.
   const relabel = () => {
-    const root = state.sequences.find(
-      (s) => s.parentId === undefined && s.name === ROOT_NAME,
-    );
-    if (root === undefined) return;
-    const walk = (parent: Sequence) => {
-      const base = parent.name === ROOT_NAME ? "" : parent.name;
-      const taken = new Set<string>();
-      for (const child of state.sequences.filter(
-        (s) => s.parentId === parent.id,
-      )) {
-        const last = child.steps[child.steps.length - 1];
-        const template =
-          last === undefined
-            ? undefined
-            : state.templates.find((t) => t.id === last.templateId);
-        if (template !== undefined) {
-          const alias = state.aliases[template.id] ?? defaultAlias(template);
-          const name = `${base}/${alias}`;
-          let unique = name;
-          for (let copy = 2; taken.has(unique); copy += 1) {
-            unique = `${name} ${copy}`;
-          }
-          taken.add(unique);
-          child.name = unique;
-        }
-        walk(child);
+    for (const sequence of state.sequences) {
+      const last = sequence.steps[sequence.steps.length - 1];
+      const template =
+        last === undefined
+          ? undefined
+          : state.templates.find((t) => t.id === last.templateId);
+      if (template !== undefined) {
+        sequence.name = state.aliases[template.id] ?? defaultAlias(template);
       }
-    };
-    walk(root);
+    }
   };
   relabel();
 
@@ -279,22 +260,39 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
       request: renderRequest(template, state.payloads[templateId] ?? {}),
       response: undefined,
     };
-    const alias = state.aliases[templateId] ?? defaultAlias(template);
-    const base = parent.name === ROOT_NAME ? "" : parent.name;
-    const name = `${base}/${alias}`;
-    const copies = state.sequences.filter(
-      (s) =>
-        s.parentId === parentId &&
-        (s.name === name || s.name.startsWith(`${name} `)),
-    ).length;
     const child: Sequence = {
       id: newId(),
-      name: copies === 0 ? name : `${name} ${copies + 1}`,
+      name: state.aliases[templateId] ?? defaultAlias(template),
       parentId,
       steps: [...inherited, step],
     };
     state.sequences.push(child);
     state.selectedSequenceId = child.id;
+  };
+
+  // Deletes a sequence and everything under it. The root cannot be deleted.
+  // Returns how many sequences were removed.
+  const deleteSequence = (id: string) => {
+    const target = state.sequences.find((s) => s.id === id);
+    if (target === undefined || target.parentId === undefined) return 0;
+
+    const doomed = new Set<string>();
+    const collect = (sequenceId: string) => {
+      doomed.add(sequenceId);
+      for (const child of state.sequences) {
+        if (child.parentId === sequenceId) collect(child.id);
+      }
+    };
+    collect(id);
+
+    if (
+      state.selectedSequenceId !== undefined &&
+      doomed.has(state.selectedSequenceId)
+    ) {
+      state.selectedSequenceId = target.parentId;
+    }
+    state.sequences = state.sequences.filter((s) => !doomed.has(s.id));
+    return doomed.size;
   };
 
   const selectSequence = (id: string) => {
@@ -347,6 +345,7 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     rows,
     importTemplates,
     extendSequence,
+    deleteSequence,
     selectSequence,
     saveStepRequest,
     saveStepResponse,

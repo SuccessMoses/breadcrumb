@@ -5,16 +5,31 @@ import InputText from "primevue/inputtext";
 import type { RequestTemplate, Sequence } from "shared";
 import { computed, ref } from "vue";
 
+import { useSDK } from "@/plugins/sdk";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
+const sdk = useSDK();
 
 const menu = ref<InstanceType<typeof ContextMenu>>();
 const extendTarget = ref<Sequence>();
 const pickerVisible = ref(false);
 const search = ref("");
 
-const menuItems = [
+const deleteTarget = () => {
+  const target = extendTarget.value;
+  if (target === undefined) return;
+  const confirmed = window.confirm(
+    `Delete "${target.name}" and every sequence under it?`,
+  );
+  if (!confirmed) return;
+  const removed = workspace.deleteSequence(target.id);
+  sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
+    variant: "success",
+  });
+};
+
+const menuItems = computed(() => [
   {
     label: "Extend",
     icon: "fas fa-plus",
@@ -23,7 +38,13 @@ const menuItems = [
       search.value = "";
     },
   },
-];
+  {
+    label: "Delete",
+    icon: "fas fa-trash",
+    disabled: extendTarget.value?.parentId === undefined,
+    command: deleteTarget,
+  },
+]);
 
 const openMenu = (event: MouseEvent, sequence: Sequence) => {
   extendTarget.value = sequence;
