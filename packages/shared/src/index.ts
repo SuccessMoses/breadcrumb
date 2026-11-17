@@ -9,9 +9,10 @@ export type { Events } from "./events";
 export type {
   ParameterLocation,
   RequestTemplate,
+  TemplateAuth,
   TemplateParameter,
 } from "./template";
-export type { Sequence } from "./sequence";
+export type { Sequence, SequenceStep } from "./sequence";
 
 export type Spec = DefinePluginPackageSpec<{
   manifestId: "breadcrumb";

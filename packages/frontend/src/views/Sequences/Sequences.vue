@@ -1,19 +1,59 @@
 <script setup lang="ts">
+import type { EditorView } from "@codemirror/view";
 import Button from "primevue/button";
-import Column from "primevue/column";
-import DataTable from "primevue/datatable";
 import InputText from "primevue/inputtext";
-import { computed, ref } from "vue";
+import Select from "primevue/select";
+import Splitter from "primevue/splitter";
+import SplitterPanel from "primevue/splitterpanel";
+import { computed, onMounted, ref, watch } from "vue";
 
-import type { SequenceRow, Workspace } from "@/workspace/workspace";
+import { useSDK } from "@/plugins/sdk";
+import { buildRawRequest } from "@/requests/rawRequest";
+import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
+const sdk = useSDK();
+
 const newName = ref("");
-const selectedRow = computed(() =>
-  workspace.rows.value.find(
-    (row) => row.sequence.id === workspace.state.selectedSequenceId,
+const selectedStepId = ref<string>();
+const requestEditor = sdk.ui.httpRequestEditor();
+const responseEditor = sdk.ui.httpResponseEditor();
+const requestHost = ref<HTMLElement>();
+const responseHost = ref<HTMLElement>();
+
+type Editable = { getEditorView: () => EditorView };
+
+const setText = (editor: Editable, text: string) => {
+  const view = editor.getEditorView();
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: text },
+  });
+};
+
+const readText = (editor: Editable) =>
+  editor.getEditorView().state.doc.toString();
+
+const sequenceOptions = computed(() =>
+  workspace.rows.value.map((row) => ({
+    id: row.sequence.id,
+    label: `${"  ".repeat(row.depth)}${row.sequence.name}`,
+  })),
+);
+
+const selectedStep = computed(() =>
+  workspace.selectedSequence.value?.steps.find(
+    (step) => step.id === selectedStepId.value,
   ),
 );
+
+const stepTemplate = computed(() => {
+  const step = selectedStep.value;
+  return step === undefined
+    ? undefined
+    : workspace.templatesById.value.get(step.templateId);
+});
+
+const requestLine = (request: string) => request.split("\r\n")[0];
 
 const createSequence = () => {
   const name = newName.value.trim();
@@ -22,29 +62,61 @@ const createSequence = () => {
   newName.value = "";
 };
 
-const onSelect = (row: SequenceRow | undefined) => {
-  if (row !== undefined) workspace.selectSequence(row.sequence.id);
+const saveStep = () => {
+  const sequence = workspace.selectedSequence.value;
+  const step = selectedStep.value;
+  if (sequence === undefined || step === undefined) return;
+  workspace.saveStepRequest(sequence.id, step.id, readText(requestEditor));
+  sdk.window.showToast("Step saved", { variant: "success" });
 };
 
-const templateLabel = (templateId: string) => {
-  const template = workspace.templatesById.value.get(templateId);
-  return template === undefined
-    ? `missing template ${templateId}`
-    : `${template.method} ${template.url}`;
+const resetStep = () => {
+  const template = stepTemplate.value;
+  if (template === undefined) return;
+  setText(requestEditor, buildRawRequest(template));
 };
+
+watch(
+  () => workspace.state.selectedSequenceId,
+  () => {
+    selectedStepId.value = workspace.selectedSequence.value?.steps[0]?.id;
+  },
+  { immediate: true },
+);
+
+watch(selectedStep, (step) => {
+  if (step !== undefined) setText(requestEditor, step.request);
+});
+
+onMounted(() => {
+  requestHost.value?.appendChild(requestEditor.getElement());
+  responseHost.value?.appendChild(responseEditor.getElement());
+  const step = selectedStep.value;
+  if (step !== undefined) setText(requestEditor, step.request);
+});
 </script>
 
 <template>
   <div class="h-full flex flex-col gap-3 p-3">
     <div class="flex items-center gap-2">
+      <Select
+        :model-value="workspace.state.selectedSequenceId"
+        :options="sequenceOptions"
+        option-label="label"
+        option-value="id"
+        placeholder="Select a sequence"
+        size="small"
+        class="w-72"
+        @update:model-value="workspace.selectSequence"
+      />
       <InputText
         v-model="newName"
-        placeholder="Sequence name"
+        placeholder="New sequence name"
         size="small"
         @keyup.enter="createSequence"
       />
       <Button
-        label="New sequence"
+        label="New"
         icon="fas fa-plus"
         size="small"
         :disabled="newName.trim() === ''"
@@ -52,54 +124,93 @@ const templateLabel = (templateId: string) => {
       />
     </div>
 
-    <DataTable
-      :value="workspace.rows.value"
-      data-key="sequence.id"
-      selection-mode="single"
-      :selection="selectedRow"
-      class="flex-1 min-h-0"
-      @update:selection="onSelect"
-    >
-      <template #empty>
-        <div class="py-8 text-center text-surface-400">
-          <i class="fas fa-diagram-project mb-2 block text-2xl" />
-          Create a sequence, then add requests to it from the Requests tab
+    <Splitter layout="horizontal" class="flex-1 min-h-0">
+      <SplitterPanel :size="25" :min-size="15" class="flex flex-col min-h-0">
+        <div class="flex-1 overflow-auto">
+          <div
+            v-if="workspace.selectedSequence.value === undefined"
+            class="p-3 text-surface-400"
+          >
+            Create a sequence, then add requests to it from the Requests tab.
+          </div>
+          <div
+            v-else-if="workspace.selectedSequence.value.steps.length === 0"
+            class="p-3 text-surface-400"
+          >
+            This sequence has no steps yet.
+          </div>
+          <button
+            v-for="(step, index) in workspace.selectedSequence.value?.steps ??
+            []"
+            :key="step.id"
+            type="button"
+            class="w-full flex gap-2 px-3 py-2 text-left text-sm hover:bg-surface-800"
+            :class="
+              step.id === selectedStepId
+                ? 'bg-surface-800 text-surface-100'
+                : 'text-surface-300'
+            "
+            @click="selectedStepId = step.id"
+          >
+            <span class="text-surface-500">{{ index + 1 }}</span>
+            <span class="truncate">{{ requestLine(step.request) }}</span>
+          </button>
         </div>
-      </template>
-      <Column header="Sequence">
-        <template #body="{ data }">
-          <span :style="{ paddingLeft: `${data.depth * 1.25}rem` }">
-            <i
-              v-if="data.depth > 0"
-              class="fas fa-turn-down-right mr-1 text-surface-500"
-            />
-            {{ data.sequence.name }}
-          </span>
-        </template>
-      </Column>
-      <Column header="Steps" style="width: 6rem">
-        <template #body="{ data }">{{
-          data.sequence.templateIds.length
-        }}</template>
-      </Column>
-    </DataTable>
+      </SplitterPanel>
 
-    <div
-      v-if="workspace.selectedSequence.value"
-      class="flex flex-col gap-1 text-sm"
-    >
-      <div class="text-surface-300">
-        {{ workspace.selectedSequence.value.name }}
-      </div>
-      <ol class="list-decimal pl-6 text-surface-400">
-        <li
-          v-for="(templateId, index) in workspace.selectedSequence.value
-            .templateIds"
-          :key="index"
-        >
-          {{ templateLabel(templateId) }}
-        </li>
-      </ol>
-    </div>
+      <SplitterPanel :size="75" class="flex flex-col min-h-0">
+        <div class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+          <span class="text-surface-400">
+            <template v-if="selectedStep"
+              >Step
+              {{
+                (workspace.selectedSequence.value?.steps.indexOf(
+                  selectedStep,
+                ) ?? 0) + 1
+              }}</template
+            >
+          </span>
+          <div class="flex gap-2">
+            <Button
+              label="Reset to template"
+              size="small"
+              severity="secondary"
+              :disabled="stepTemplate === undefined"
+              @click="resetStep"
+            />
+            <Button
+              label="Save"
+              size="small"
+              :disabled="selectedStep === undefined"
+              @click="saveStep"
+            />
+          </div>
+        </div>
+
+        <Splitter layout="vertical" class="flex-1 min-h-0">
+          <SplitterPanel :size="50" :min-size="20" class="min-h-0">
+            <div
+              v-show="selectedStep !== undefined"
+              ref="requestHost"
+              class="h-full"
+            />
+          </SplitterPanel>
+          <SplitterPanel
+            :size="50"
+            :min-size="20"
+            class="min-h-0 flex flex-col"
+          >
+            <div class="px-3 py-1 text-xs text-surface-500">
+              Response (not sent)
+            </div>
+            <div
+              v-show="selectedStep !== undefined"
+              ref="responseHost"
+              class="flex-1 min-h-0"
+            />
+          </SplitterPanel>
+        </Splitter>
+      </SplitterPanel>
+    </Splitter>
   </div>
 </template>
