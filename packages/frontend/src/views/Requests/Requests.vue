@@ -5,7 +5,7 @@ import Select from "primevue/select";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
 import type { RequestTemplate } from "shared";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
 import { parseOpenApi } from "@/openapi/parseOpenApi";
@@ -169,6 +169,29 @@ const onFileChange = async (event: Event) => {
 
 watch(selectedTemplateId, showTemplateText);
 
+// A step opened from the Sequences view asks for the template behind it. Clear
+// whatever would hide its row, select it, and scroll to it.
+watch(
+  () => workspace.focusTemplate.value,
+  (templateId) => {
+    if (templateId === undefined) return;
+    if (!workspace.templatesById.value.has(templateId)) return;
+    search.value = "";
+    collapsed.value = {
+      ...collapsed.value,
+      [workspace.collectionOf(templateId)]: false,
+    };
+    selectedTemplateId.value = templateId;
+    workspace.consumeFocusTemplate();
+    void nextTick(() => {
+      document
+        .querySelector(`[data-template-id="${templateId}"]`)
+        ?.scrollIntoView({ block: "nearest" });
+    });
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
   if (editorHost.value !== undefined) {
     editor = createHttpEditor(editorHost.value, false);
@@ -255,6 +278,7 @@ onMounted(() => {
               <button
                 v-for="template in group.templates"
                 :key="template.id"
+                :data-template-id="template.id"
                 type="button"
                 class="w-full flex items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
                 :class="
