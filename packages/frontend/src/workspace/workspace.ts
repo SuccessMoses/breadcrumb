@@ -11,12 +11,18 @@ import {
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
 
+type Collection = { id: string; name: string };
+
+const DEFAULT_COLLECTION_ID = "default";
+
 type WorkspaceState = {
   templates: RequestTemplate[];
   sequences: Sequence[];
   selectedSequenceId: string | undefined;
   texts: Record<string, string>;
   aliases: Record<string, string>;
+  collections: Collection[];
+  templateCollection: Record<string, string>;
 };
 
 type SequenceRow = {
@@ -52,6 +58,9 @@ export type Workspace = {
     stepId: string,
     response: string,
   ) => void;
+  collectionOf: (templateId: string) => string;
+  createCollection: (name: string) => void;
+  moveTemplate: (templateId: string, collectionId: string) => void;
   templateText: (templateId: string) => string | undefined;
   renderTemplate: (templateId: string) => string | undefined;
   setTemplateText: (templateId: string, text: string) => void;
@@ -66,6 +75,8 @@ const EMPTY: WorkspaceState = {
   selectedSequenceId: undefined,
   texts: {},
   aliases: {},
+  collections: [],
+  templateCollection: {},
 };
 
 const isState = (value: unknown): value is WorkspaceState =>
@@ -101,6 +112,18 @@ const restoreStrings = (value: unknown): Record<string, string> =>
         ),
       )
     : {};
+
+const restoreCollections = (value: unknown): Collection[] =>
+  Array.isArray(value)
+    ? value.flatMap((item): Collection[] =>
+        hasKey(item, "id") &&
+        hasKey(item, "name") &&
+        typeof item.id === "string" &&
+        typeof item.name === "string"
+          ? [{ id: item.id, name: item.name }]
+          : [],
+      )
+    : [];
 
 const ROOT_NAME = "/";
 
@@ -169,6 +192,14 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
       typeof stored.selectedSequenceId === "string"
         ? stored.selectedSequenceId
         : undefined;
+    state.collections = restoreCollections(
+      hasKey(stored, "collections") ? stored.collections : undefined,
+    );
+    state.templateCollection = restoreStrings(
+      hasKey(stored, "templateCollection")
+        ? stored.templateCollection
+        : undefined,
+    );
     state.texts = restoreStrings(
       hasKey(stored, "texts") ? stored.texts : undefined,
     );
@@ -177,12 +208,19 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     );
   }
 
+  // Every template starts in the Default collection, which always exists
+  if (!state.collections.some((c) => c.id === DEFAULT_COLLECTION_ID)) {
+    state.collections.unshift({ id: DEFAULT_COLLECTION_ID, name: "Default" });
+  }
+
   watch(
     () => ({
       templates: state.templates,
       sequences: state.sequences,
       selectedSequenceId: state.selectedSequenceId,
       texts: state.texts,
+      collections: state.collections,
+      templateCollection: state.templateCollection,
       aliases: state.aliases,
     }),
     (snapshot) => sdk.storage.set(snapshot),
@@ -371,6 +409,23 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     step.response = response;
   };
 
+  const collectionOf = (templateId: string) => {
+    const id = state.templateCollection[templateId];
+    return id !== undefined && state.collections.some((c) => c.id === id)
+      ? id
+      : DEFAULT_COLLECTION_ID;
+  };
+
+  const createCollection = (name: string) => {
+    const trimmed = name.trim();
+    if (trimmed === "") return;
+    state.collections.push({ id: newId(), name: trimmed });
+  };
+
+  const moveTemplate = (templateId: string, collectionId: string) => {
+    state.templateCollection[templateId] = collectionId;
+  };
+
   // The editable template text: the saved override, or the default request
   const templateText = (templateId: string) => {
     const template = templatesById.value.get(templateId);
@@ -417,6 +472,9 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     selectSequence,
     saveStepRequest,
     saveStepResponse,
+    collectionOf,
+    createCollection,
+    moveTemplate,
     templateText,
     renderTemplate,
     setTemplateText,
