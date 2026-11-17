@@ -175,19 +175,27 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
 
   const ensureRoot = () => {
     const roots = state.sequences.filter((s) => s.parentId === undefined);
-    const existing =
-      roots.find((s) => s.name === ROOT_NAME) ??
-      roots.find((s) => s.steps.length === 0);
-    if (existing !== undefined) existing.name = ROOT_NAME;
-    const root: Sequence = existing ?? {
-      id: newId(),
-      name: ROOT_NAME,
-      parentId: undefined,
-      steps: [],
-    };
-    if (existing === undefined) state.sequences.push(root);
+    const empties = roots.filter((s) => s.steps.length === 0);
+    const root: Sequence = empties.find((s) => s.name === ROOT_NAME) ??
+      empties[0] ?? {
+        id: newId(),
+        name: ROOT_NAME,
+        parentId: undefined,
+        steps: [],
+      };
+    root.name = ROOT_NAME;
+    if (!state.sequences.includes(root)) state.sequences.push(root);
     for (const sequence of roots) {
-      if (sequence === existing) continue;
+      if (sequence === root) continue;
+      if (sequence.steps.length === 0) {
+        // Only one empty sequence may sit at the top: drop the extra one and
+        // keep its children under the root.
+        for (const child of state.sequences) {
+          if (child.parentId === sequence.id) child.parentId = root.id;
+        }
+        state.sequences.splice(state.sequences.indexOf(sequence), 1);
+        continue;
+      }
       sequence.parentId = root.id;
       sequence.name = `/${sequence.name.replace(/^\/+/, "")}`;
     }
