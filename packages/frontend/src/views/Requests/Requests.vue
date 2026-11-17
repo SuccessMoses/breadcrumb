@@ -135,7 +135,7 @@ onMounted(() => {
     </div>
 
     <Splitter layout="horizontal" class="flex-1 min-h-0">
-      <SplitterPanel :size="40" :min-size="20" class="flex flex-col min-h-0">
+      <SplitterPanel :size="25" :min-size="15" class="flex flex-col min-h-0">
         <div class="flex items-center gap-2 pb-2">
           <InputText
             v-model="search"
@@ -164,13 +164,11 @@ onMounted(() => {
               Import an OpenAPI 3 JSON spec to create request templates
             </div>
           </template>
-          <Column field="method" header="Method" style="width: 6rem" />
           <Column header="Alias">
             <template #body="{ data }">{{
               workspace.templateAlias(data)
             }}</template>
           </Column>
-          <Column field="url" header="URL" />
         </DataTable>
       </SplitterPanel>
 
