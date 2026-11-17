@@ -1,16 +1,14 @@
 import type { RequestTemplate, Sequence, SequenceStep } from "shared";
 import { computed, type ComputedRef, reactive, watch } from "vue";
 
-import { renderRequest } from "@/requests/renderRequest";
+import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
-
-type Payloads = Record<string, Record<string, string>>;
 
 type WorkspaceState = {
   templates: RequestTemplate[];
   sequences: Sequence[];
   selectedSequenceId: string | undefined;
-  payloads: Payloads;
+  texts: Record<string, string>;
   aliases: Record<string, string>;
 };
 
@@ -38,7 +36,10 @@ export type Workspace = {
     stepId: string,
     response: string,
   ) => void;
-  setPayload: (templateId: string, key: string, value: string) => void;
+  templateText: (templateId: string) => string | undefined;
+  renderTemplate: (templateId: string) => string | undefined;
+  setTemplateText: (templateId: string, text: string) => void;
+  resetTemplateText: (templateId: string) => void;
   templateAlias: (template: RequestTemplate) => string;
   setAlias: (templateId: string, alias: string) => void;
 };
@@ -47,7 +48,7 @@ const EMPTY: WorkspaceState = {
   templates: [],
   sequences: [],
   selectedSequenceId: undefined,
-  payloads: {},
+  texts: {},
   aliases: {},
 };
 
@@ -76,26 +77,7 @@ const isStep = (value: unknown): value is SequenceStep =>
   typeof value.templateId === "string" &&
   typeof value.request === "string";
 
-const restorePayloads = (value: unknown): Payloads => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(value).map(([templateId, fields]) => [
-      templateId,
-      typeof fields === "object" && fields !== null
-        ? Object.fromEntries(
-            Object.entries(fields).filter(
-              (entry): entry is [string, string] =>
-                typeof entry[1] === "string",
-            ),
-          )
-        : {},
-    ]),
-  );
-};
-
-const restoreAliases = (value: unknown): Record<string, string> =>
+const restoreStrings = (value: unknown): Record<string, string> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? Object.fromEntries(
         Object.entries(value).filter(
@@ -134,8 +116,7 @@ const restoreSequences = (
       const steps = value.templateIds.flatMap((templateId): SequenceStep[] => {
         if (typeof templateId !== "string") return [];
         const template = templates.find((t) => t.id === templateId);
-        const request =
-          template === undefined ? "" : renderRequest(template, {});
+        const request = template === undefined ? "" : defaultRequest(template);
         return [{ id: newId(), templateId, request, response: undefined }];
       });
       return [{ id: value.id, name: value.name, parentId, steps }];
@@ -154,10 +135,10 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
       typeof stored.selectedSequenceId === "string"
         ? stored.selectedSequenceId
         : undefined;
-    state.payloads = restorePayloads(
-      hasKey(stored, "payloads") ? stored.payloads : undefined,
+    state.texts = restoreStrings(
+      hasKey(stored, "texts") ? stored.texts : undefined,
     );
-    state.aliases = restoreAliases(
+    state.aliases = restoreStrings(
       hasKey(stored, "aliases") ? stored.aliases : undefined,
     );
   }
@@ -167,7 +148,7 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
       templates: state.templates,
       sequences: state.sequences,
       selectedSequenceId: state.selectedSequenceId,
-      payloads: state.payloads,
+      texts: state.texts,
       aliases: state.aliases,
     }),
     (snapshot) => sdk.storage.set(snapshot),
@@ -257,7 +238,7 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     const step: SequenceStep = {
       id: newId(),
       templateId,
-      request: renderRequest(template, state.payloads[templateId] ?? {}),
+      request: renderTemplate(templateId) ?? "",
       response: undefined,
     };
     const child: Sequence = {
@@ -324,11 +305,25 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     step.response = response;
   };
 
-  const setPayload = (templateId: string, key: string, value: string) => {
-    state.payloads[templateId] = {
-      ...state.payloads[templateId],
-      [key]: value,
-    };
+  // The editable template text: the saved override, or the default request
+  const templateText = (templateId: string) => {
+    const template = templatesById.value.get(templateId);
+    if (template === undefined) return undefined;
+    return state.texts[templateId] ?? defaultRequest(template);
+  };
+
+  // The template rendered into a concrete request, with fresh {random} values
+  const renderTemplate = (templateId: string) => {
+    const text = templateText(templateId);
+    return text === undefined ? undefined : expandTemplate(text);
+  };
+
+  const setTemplateText = (templateId: string, text: string) => {
+    state.texts[templateId] = text;
+  };
+
+  const resetTemplateText = (templateId: string) => {
+    delete state.texts[templateId];
   };
 
   const templateAlias = (template: RequestTemplate) =>
@@ -349,7 +344,10 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     selectSequence,
     saveStepRequest,
     saveStepResponse,
-    setPayload,
+    templateText,
+    renderTemplate,
+    setTemplateText,
+    resetTemplateText,
     templateAlias,
     setAlias,
   };

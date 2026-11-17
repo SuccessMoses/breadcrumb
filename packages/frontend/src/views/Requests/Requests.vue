@@ -12,7 +12,6 @@ import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
 import { parseOpenApi } from "@/openapi/parseOpenApi";
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
-import { payloadFields, renderRequest } from "@/requests/renderRequest";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
@@ -21,9 +20,8 @@ const sdk = useSDK();
 const fileInput = ref<HTMLInputElement>();
 const selectedTemplateId = ref<string>();
 const search = ref("");
-const preview = ref("");
-const previewHost = ref<HTMLElement>();
-let previewEditor: HttpEditor | undefined;
+const editorHost = ref<HTMLElement>();
+let editor: HttpEditor | undefined;
 
 const renderPattern = ref("");
 const renderMatch = computed(() => {
@@ -67,41 +65,6 @@ const filteredTemplates = computed(() => {
   );
 });
 
-const payloadRows = computed(() =>
-  selectedTemplate.value === undefined
-    ? []
-    : payloadFields(selectedTemplate.value),
-);
-
-const currentPayloads = computed(() => {
-  const id = selectedTemplateId.value;
-  return id === undefined ? {} : { ...workspace.state.payloads[id] };
-});
-
-const payloadValue = (key: string) => {
-  const id = selectedTemplateId.value;
-  return id === undefined ? "" : (workspace.state.payloads[id]?.[key] ?? "");
-};
-
-const reroll = () => {
-  const template = selectedTemplate.value;
-  preview.value =
-    template === undefined
-      ? ""
-      : renderRequest(template, currentPayloads.value);
-  previewEditor?.setText(preview.value);
-};
-
-const onSelectTemplate = (row: RequestTemplate | undefined) => {
-  selectedTemplateId.value = row?.id;
-};
-
-const onPayloadInput = (key: string, event: Event) => {
-  const id = selectedTemplateId.value;
-  if (id === undefined) return;
-  workspace.setPayload(id, key, (event.target as HTMLInputElement).value);
-};
-
 const aliasValue = computed(() =>
   selectedTemplate.value === undefined
     ? ""
@@ -112,6 +75,34 @@ const onAliasInput = (event: Event) => {
   const id = selectedTemplateId.value;
   if (id === undefined) return;
   workspace.setAlias(id, (event.target as HTMLInputElement).value);
+};
+
+const onSelectTemplate = (row: RequestTemplate | undefined) => {
+  selectedTemplateId.value = row?.id;
+};
+
+const toLf = (text: string) => text.replace(/\r\n/g, "\n");
+const toCrlf = (text: string) => text.replace(/\r?\n/g, "\r\n");
+
+const showTemplateText = () => {
+  const id = selectedTemplateId.value;
+  editor?.setText(
+    id === undefined ? "" : toLf(workspace.templateText(id) ?? ""),
+  );
+};
+
+const saveTemplateText = () => {
+  const id = selectedTemplateId.value;
+  if (id === undefined || editor === undefined) return;
+  workspace.setTemplateText(id, toCrlf(editor.getText()));
+  sdk.window.showToast("Template saved", { variant: "success" });
+};
+
+const resetTemplateText = () => {
+  const id = selectedTemplateId.value;
+  if (id === undefined) return;
+  workspace.resetTemplateText(id);
+  showTemplateText();
 };
 
 const onFileChange = async (event: Event) => {
@@ -131,12 +122,12 @@ const onFileChange = async (event: Event) => {
   });
 };
 
-watch([selectedTemplate, currentPayloads], reroll, { deep: true });
+watch(selectedTemplateId, showTemplateText);
 
 onMounted(() => {
-  if (previewHost.value !== undefined) {
-    previewEditor = createHttpEditor(previewHost.value, true);
-    previewEditor.setText(preview.value);
+  if (editorHost.value !== undefined) {
+    editor = createHttpEditor(editorHost.value, false);
+    showTemplateText();
   }
 });
 </script>
@@ -198,7 +189,7 @@ onMounted(() => {
       </SplitterPanel>
 
       <SplitterPanel
-        :size="60"
+        :size="75"
         class="flex flex-col min-h-0 min-w-0 overflow-hidden"
       >
         <div class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
@@ -208,16 +199,14 @@ onMounted(() => {
               {{ selectedTemplate.url }}</template
             >
           </span>
-          <div class="flex gap-2">
-            <InputText
-              :model-value="aliasValue"
-              :disabled="selectedTemplate === undefined"
-              placeholder="Alias"
-              size="small"
-              class="w-56"
-              @input="onAliasInput"
-            />
-          </div>
+          <InputText
+            :model-value="aliasValue"
+            :disabled="selectedTemplate === undefined"
+            placeholder="Alias"
+            size="small"
+            class="w-56"
+            @input="onAliasInput"
+          />
         </div>
 
         <div class="flex items-center gap-2 px-3 pb-2">
@@ -248,60 +237,31 @@ onMounted(() => {
           Regex error: {{ renderMatch.message }}
         </p>
 
-        <Splitter layout="vertical" class="flex-1 min-h-0">
-          <SplitterPanel
-            :size="60"
-            :min-size="20"
-            class="min-h-0 min-w-0 flex flex-col overflow-hidden"
-          >
-            <div class="px-3 py-1 text-xs text-surface-500">Preview</div>
-            <div
-              ref="previewHost"
-              class="flex-1 min-h-0 min-w-0 overflow-hidden"
+        <div class="flex items-center justify-between gap-2 px-3 py-1">
+          <span class="text-xs text-surface-500">
+            Template. {random} is a new random string in each sequence it is
+            rendered into.
+          </span>
+          <div class="flex gap-2">
+            <Button
+              label="Reset"
+              size="small"
+              severity="secondary"
+              :disabled="selectedTemplate === undefined"
+              @click="resetTemplateText"
             />
-          </SplitterPanel>
-          <SplitterPanel
-            :size="40"
-            :min-size="20"
-            class="min-h-0 min-w-0 flex flex-col overflow-hidden"
-          >
-            <div class="px-3 py-1 text-xs text-surface-500">
-              Payloads: comma separates choices, {random} is a random string
-            </div>
-            <DataTable
-              :value="payloadRows"
-              data-key="key"
-              scrollable
-              scroll-height="flex"
-              class="flex-1 min-h-0"
-            >
-              <template #empty>
-                <div class="py-4 text-center text-surface-400">
-                  Select a template to set its payloads
-                </div>
-              </template>
-              <Column field="key" header="Field" />
-              <Column header="Default">
-                <template #body="{ data }">
-                  <span class="font-mono text-surface-400">{{
-                    data.defaultText
-                  }}</span>
-                </template>
-              </Column>
-              <Column header="Payload">
-                <template #body="{ data }">
-                  <InputText
-                    :model-value="payloadValue(data.key)"
-                    size="small"
-                    class="w-full font-mono"
-                    spellcheck="false"
-                    @input="onPayloadInput(data.key, $event)"
-                  />
-                </template>
-              </Column>
-            </DataTable>
-          </SplitterPanel>
-        </Splitter>
+            <Button
+              label="Save"
+              size="small"
+              :disabled="selectedTemplate === undefined"
+              @click="saveTemplateText"
+            />
+          </div>
+        </div>
+        <div
+          ref="editorHost"
+          class="flex-1 min-h-0 min-w-0 mx-3 mb-3 overflow-hidden"
+        />
       </SplitterPanel>
     </Splitter>
   </div>
