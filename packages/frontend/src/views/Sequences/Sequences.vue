@@ -24,7 +24,7 @@ let responseEditor: HttpEditor | undefined;
 const sequenceOptions = computed(() =>
   workspace.rows.value.map((row) => ({
     id: row.sequence.id,
-    label: `${"  ".repeat(row.depth)}${row.sequence.name}`,
+    label: `${"  ".repeat(row.depth)}${workspace.sequenceLabel(row.sequence)}`,
   })),
 );
 
