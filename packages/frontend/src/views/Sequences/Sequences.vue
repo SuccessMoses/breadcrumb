@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Button from "primevue/button";
-import InputText from "primevue/inputtext";
 import Select from "primevue/select";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
@@ -15,7 +14,6 @@ import type { Workspace } from "@/workspace/workspace";
 const { workspace } = defineProps<{ workspace: Workspace }>();
 const sdk = useSDK();
 
-const newName = ref("");
 const selectedStepId = ref<string>();
 const sending = ref(false);
 const requestHost = ref<HTMLElement>();
@@ -46,13 +44,6 @@ const stepTemplate = computed(() => {
 const requestLine = (request: string) => request.split(/\r?\n/)[0];
 
 const toCrlf = (text: string) => text.replace(/\r?\n/g, "\r\n");
-
-const createSequence = () => {
-  const name = newName.value.trim();
-  if (name === "") return;
-  workspace.createSequence(name);
-  newName.value = "";
-};
 
 const saveSelectedEdits = () => {
   const sequence = workspace.selectedSequence.value;
@@ -154,19 +145,6 @@ onMounted(() => {
         class="w-72"
         @update:model-value="workspace.selectSequence"
       />
-      <InputText
-        v-model="newName"
-        placeholder="New sequence name"
-        size="small"
-        @keyup.enter="createSequence"
-      />
-      <Button
-        label="New"
-        icon="fas fa-plus"
-        size="small"
-        :disabled="newName.trim() === ''"
-        @click="createSequence"
-      />
     </div>
 
     <Splitter layout="horizontal" class="flex-1 min-h-0">
@@ -176,7 +154,7 @@ onMounted(() => {
             v-if="workspace.selectedSequence.value === undefined"
             class="p-3 text-surface-400"
           >
-            Create a sequence, then add requests to it from the Requests tab.
+            Extend a sequence in the Tree tab to create one.
           </div>
           <div
             v-else-if="workspace.selectedSequence.value.steps.length === 0"

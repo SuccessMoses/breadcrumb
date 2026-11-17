@@ -25,7 +25,6 @@ export type Workspace = {
   selectedSequence: ComputedRef<Sequence | undefined>;
   rows: ComputedRef<SequenceRow[]>;
   importTemplates: (templates: RequestTemplate[]) => void;
-  createSequence: (name: string) => void;
   extendSequence: (parentId: string, templateId: string) => void;
   selectSequence: (id: string) => void;
   saveStepRequest: (
@@ -104,6 +103,8 @@ const restoreAliases = (value: unknown): Record<string, string> =>
       )
     : {};
 
+const ROOT_NAME = "/";
+
 const defaultAlias = (template: RequestTemplate) =>
   template.operationId ??
   template.summary ??
@@ -172,6 +173,30 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     { deep: true },
   );
 
+  const ensureRoot = () => {
+    const roots = state.sequences.filter((s) => s.parentId === undefined);
+    const existing = roots.find(
+      (s) => s.name === ROOT_NAME && s.steps.length === 0,
+    );
+    const root: Sequence = existing ?? {
+      id: newId(),
+      name: ROOT_NAME,
+      parentId: undefined,
+      steps: [],
+    };
+    if (existing === undefined) state.sequences.push(root);
+    for (const sequence of roots) {
+      if (sequence === existing) continue;
+      sequence.parentId = root.id;
+      sequence.name = `/${sequence.name.replace(/^\/+/, "")}`;
+    }
+    const selected = state.sequences.some(
+      (s) => s.id === state.selectedSequenceId,
+    );
+    if (!selected) state.selectedSequenceId = root.id;
+  };
+  ensureRoot();
+
   const templatesById = computed(
     () => new Map(state.templates.map((t) => [t.id, t])),
   );
@@ -194,17 +219,6 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     state.templates = templates;
   };
 
-  const createSequence = (name: string) => {
-    const sequence: Sequence = {
-      id: newId(),
-      name,
-      parentId: undefined,
-      steps: [],
-    };
-    state.sequences.push(sequence);
-    state.selectedSequenceId = sequence.id;
-  };
-
   const extendSequence = (parentId: string, templateId: string) => {
     const parent = state.sequences.find((s) => s.id === parentId);
     const template = templatesById.value.get(templateId);
@@ -221,12 +235,17 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
       request: renderRequest(template, state.payloads[templateId] ?? {}),
       response: undefined,
     };
-    const childCount = state.sequences.filter(
-      (s) => s.parentId === parentId,
+    const alias = state.aliases[templateId] ?? defaultAlias(template);
+    const base = parent.name === ROOT_NAME ? "" : parent.name;
+    const name = `${base}/${alias}`;
+    const copies = state.sequences.filter(
+      (s) =>
+        s.parentId === parentId &&
+        (s.name === name || s.name.startsWith(`${name} `)),
     ).length;
     const child: Sequence = {
       id: newId(),
-      name: `${parent.name}.${childCount + 1}`,
+      name: copies === 0 ? name : `${name} ${copies + 1}`,
       parentId,
       steps: [...inherited, step],
     };
@@ -283,7 +302,6 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     selectedSequence,
     rows,
     importTemplates,
-    createSequence,
     extendSequence,
     selectSequence,
     saveStepRequest,

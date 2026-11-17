@@ -58,7 +58,7 @@ const extendWith = (template: RequestTemplate) => {
         class="py-8 text-center text-surface-400"
       >
         <i class="fas fa-sitemap mb-2 block text-2xl" />
-        No sequences yet. Create one in the Sequences tab.
+        No sequences yet.
       </div>
       <button
         v-for="row in workspace.rows.value"
