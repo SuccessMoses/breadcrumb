@@ -6,6 +6,7 @@ import type { RequestTemplate, Sequence } from "shared";
 import { computed, ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
+import { compilePattern, sequenceText } from "@/query/sequenceText";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
@@ -15,6 +16,22 @@ const menu = ref<InstanceType<typeof ContextMenu>>();
 const extendTarget = ref<Sequence>();
 const pickerVisible = ref(false);
 const search = ref("");
+const pattern = ref("");
+
+const compiled = computed(() => {
+  const text = pattern.value.trim();
+  return text === "" ? undefined : compilePattern(text);
+});
+
+const visibleRows = computed(() => {
+  const match = compiled.value;
+  if (match === undefined || match.kind === "error") {
+    return workspace.rows.value;
+  }
+  return workspace.rows.value.filter((row) =>
+    match.regex.test(sequenceText(row.sequence)),
+  );
+});
 
 const deleteTarget = () => {
   const target = extendTarget.value;
@@ -73,6 +90,39 @@ const extendWith = (template: RequestTemplate) => {
 
 <template>
   <div class="h-full flex flex-col gap-3 p-3">
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <InputText
+          v-model="pattern"
+          placeholder="Regex over each sequence, e.g. (?s)^POST /api/v4/users/login"
+          size="small"
+          class="flex-1 font-mono"
+          spellcheck="false"
+        />
+        <span class="text-xs text-surface-500 whitespace-nowrap">
+          {{ visibleRows.length }} / {{ workspace.rows.value.length }}
+        </span>
+      </div>
+      <p
+        v-if="compiled !== undefined && compiled.kind === 'error'"
+        class="text-sm text-red-400"
+      >
+        Regex error: {{ compiled.message }}
+      </p>
+      <details class="text-xs text-surface-400">
+        <summary class="cursor-pointer">Regex usage</summary>
+        <p class="py-1">
+          A sequence is one text: its requests in order, each followed by its
+          response head, with the requests joined by \x1e (the record
+          separator). The regex is searched in that text, and matching sequences
+          stay in the list. Start with (?s) so . matches newlines, and use
+          [^\x1e] to stay inside one request. Example:
+        </p>
+        <pre class="whitespace-pre-wrap break-all font-mono py-1">
+(?s)^\s*POST /api/v4/users/login[^\x1e]*(?:\x1ePOST /api/v4/users/login[^\x1e]*)*(?:\x1eGET /api/v4/users/(?:me|[^/\x1e?]+/status)\?[^\x1e]*)+</pre>
+      </details>
+    </div>
+
     <div class="flex-1 min-h-0 overflow-auto">
       <div
         v-if="workspace.rows.value.length === 0"
@@ -81,8 +131,14 @@ const extendWith = (template: RequestTemplate) => {
         <i class="fas fa-sitemap mb-2 block text-2xl" />
         No sequences yet.
       </div>
+      <div
+        v-else-if="visibleRows.length === 0"
+        class="py-8 text-center text-surface-400"
+      >
+        No sequences match the regex.
+      </div>
       <button
-        v-for="row in workspace.rows.value"
+        v-for="row in visibleRows"
         :key="row.sequence.id"
         type="button"
         class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
