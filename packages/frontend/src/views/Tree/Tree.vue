@@ -154,6 +154,14 @@ const subtreeStepCount = (id: string): number => {
   );
 };
 
+// Hover text: the sequence's steps, one request line each
+const sequenceTitle = (sequence: Sequence) =>
+  sequence.steps.length === 0
+    ? "No steps"
+    : sequence.steps
+        .map((step, index) => `${index + 1}. ${step.request.split(/\r?\n/)[0]}`)
+        .join("\n");
+
 const rerenderTarget = () => {
   const target = extendTarget.value;
   if (target === undefined) return;
@@ -300,6 +308,7 @@ const extendWith = (template: RequestTemplate) => {
         v-for="row in visibleRows"
         :key="row.sequence.id"
         type="button"
+        :title="sequenceTitle(row.sequence)"
         class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
         :class="
           row.sequence.id === workspace.state.selectedSequenceId
