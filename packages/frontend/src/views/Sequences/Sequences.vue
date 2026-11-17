@@ -4,6 +4,7 @@ import InputText from "primevue/inputtext";
 import Select from "primevue/select";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
+import type { SequenceStep } from "shared";
 import { computed, onMounted, ref, watch } from "vue";
 
 import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
@@ -16,14 +17,16 @@ const sdk = useSDK();
 
 const newName = ref("");
 const selectedStepId = ref<string>();
+const sending = ref(false);
 const requestHost = ref<HTMLElement>();
 const responseHost = ref<HTMLElement>();
 let requestEditor: HttpEditor | undefined;
+let responseEditor: HttpEditor | undefined;
 
 const sequenceOptions = computed(() =>
   workspace.rows.value.map((row) => ({
     id: row.sequence.id,
-    label: `${"  ".repeat(row.depth)}${row.sequence.name}`,
+    label: `${"  ".repeat(row.depth)}${row.sequence.name}`,
   })),
 );
 
@@ -42,6 +45,8 @@ const stepTemplate = computed(() => {
 
 const requestLine = (request: string) => request.split(/\r?\n/)[0];
 
+const toCrlf = (text: string) => text.replace(/\r?\n/g, "\r\n");
+
 const createSequence = () => {
   const name = newName.value.trim();
   if (name === "") return;
@@ -49,27 +54,59 @@ const createSequence = () => {
   newName.value = "";
 };
 
-const saveStep = () => {
+const saveSelectedEdits = () => {
   const sequence = workspace.selectedSequence.value;
   const step = selectedStep.value;
   if (
     sequence === undefined ||
     step === undefined ||
     requestEditor === undefined
-  )
-    return;
+  ) {
+    return false;
+  }
   workspace.saveStepRequest(
     sequence.id,
     step.id,
-    requestEditor.getText().replace(/\r?\n/g, "\r\n"),
+    toCrlf(requestEditor.getText()),
   );
-  sdk.window.showToast("Step saved", { variant: "success" });
+  return true;
+};
+
+const saveStep = () => {
+  if (saveSelectedEdits())
+    sdk.window.showToast("Step saved", { variant: "success" });
 };
 
 const resetStep = () => {
   const template = stepTemplate.value;
   if (template === undefined) return;
   requestEditor?.setText(buildRawRequest(template));
+};
+
+const sendSteps = async (steps: SequenceStep[]) => {
+  const sequence = workspace.selectedSequence.value;
+  if (sequence === undefined || steps.length === 0) return;
+  saveSelectedEdits();
+  sending.value = true;
+  for (const step of steps) {
+    const result = await sdk.backend.sendRaw(step.request);
+    if (result.kind === "Error") {
+      sdk.window.showToast(result.error, { variant: "error" });
+      break;
+    }
+    workspace.saveStepResponse(sequence.id, step.id, result.value);
+  }
+  sending.value = false;
+};
+
+const sendStep = () => {
+  const step = selectedStep.value;
+  if (step !== undefined) void sendSteps([step]);
+};
+
+const sendSequence = () => {
+  const steps = workspace.selectedSequence.value?.steps ?? [];
+  void sendSteps(steps);
 };
 
 watch(
@@ -82,7 +119,15 @@ watch(
 
 watch(selectedStep, (step) => {
   requestEditor?.setText(step === undefined ? "" : step.request);
+  responseEditor?.setText(step?.response ?? "");
 });
+
+watch(
+  () => selectedStep.value?.response,
+  (response) => {
+    responseEditor?.setText(response ?? "");
+  },
+);
 
 onMounted(() => {
   if (requestHost.value !== undefined) {
@@ -90,7 +135,8 @@ onMounted(() => {
     requestEditor.setText(selectedStep.value?.request ?? "");
   }
   if (responseHost.value !== undefined) {
-    createHttpEditor(responseHost.value, true);
+    responseEditor = createHttpEditor(responseHost.value, true);
+    responseEditor.setText(selectedStep.value?.response ?? "");
   }
 });
 </script>
@@ -186,6 +232,22 @@ onMounted(() => {
               :disabled="selectedStep === undefined"
               @click="saveStep"
             />
+            <Button
+              label="Send step"
+              size="small"
+              severity="secondary"
+              :disabled="selectedStep === undefined || sending"
+              @click="sendStep"
+            />
+            <Button
+              label="Send sequence"
+              size="small"
+              :disabled="
+                (workspace.selectedSequence.value?.steps.length ?? 0) === 0 ||
+                sending
+              "
+              @click="sendSequence"
+            />
           </div>
         </div>
 
@@ -208,7 +270,11 @@ onMounted(() => {
             class="min-h-0 min-w-0 flex flex-col overflow-hidden"
           >
             <div class="px-3 py-1 text-xs text-surface-500">
-              Response (not sent)
+              {{
+                selectedStep?.response === undefined
+                  ? "Response (not sent)"
+                  : "Response"
+              }}
             </div>
             <div
               ref="responseHost"

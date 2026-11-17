@@ -1,1 +1,5 @@
-export type API = Record<string, never>;
+import type { Result } from "./result";
+
+export type API = {
+  sendRaw: (raw: string) => Promise<Result<string>>;
+};

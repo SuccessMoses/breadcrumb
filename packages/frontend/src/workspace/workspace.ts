@@ -29,6 +29,11 @@ export type Workspace = {
     stepId: string,
     request: string,
   ) => void;
+  saveStepResponse: (
+    sequenceId: string,
+    stepId: string,
+    response: string,
+  ) => void;
 };
 
 const EMPTY: WorkspaceState = {
@@ -86,7 +91,7 @@ const restoreSequences = (
         if (typeof templateId !== "string") return [];
         const template = templates.find((t) => t.id === templateId);
         const request = template === undefined ? "" : buildRawRequest(template);
-        return [{ id: newId(), templateId, request }];
+        return [{ id: newId(), templateId, request, response: undefined }];
       });
       return [{ id: value.id, name: value.name, parentId, steps }];
     }
@@ -157,11 +162,13 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     const inherited: SequenceStep[] = parent.steps.map((step) => ({
       ...step,
       id: newId(),
+      response: undefined,
     }));
     const step: SequenceStep = {
       id: newId(),
       templateId,
       request: buildRawRequest(template),
+      response: undefined,
     };
     const childCount = state.sequences.filter(
       (s) => s.parentId === parentId,
@@ -180,16 +187,29 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     state.selectedSequenceId = id;
   };
 
+  const findStep = (sequenceId: string, stepId: string) =>
+    state.sequences
+      .find((s) => s.id === sequenceId)
+      ?.steps.find((s) => s.id === stepId);
+
   const saveStepRequest = (
     sequenceId: string,
     stepId: string,
     request: string,
   ) => {
-    const step = state.sequences
-      .find((s) => s.id === sequenceId)
-      ?.steps.find((s) => s.id === stepId);
+    const step = findStep(sequenceId, stepId);
     if (step === undefined) return;
     step.request = request;
+  };
+
+  const saveStepResponse = (
+    sequenceId: string,
+    stepId: string,
+    response: string,
+  ) => {
+    const step = findStep(sequenceId, stepId);
+    if (step === undefined) return;
+    step.response = response;
   };
 
   return {
@@ -202,5 +222,6 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     extendSequence,
     selectSequence,
     saveStepRequest,
+    saveStepResponse,
   };
 };
