@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { EditorView } from "@codemirror/view";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Select from "primevue/select";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
-import { computed, onMounted, ref, watch } from "vue";
+import Textarea from "primevue/textarea";
+import { computed, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 import { buildRawRequest } from "@/requests/rawRequest";
@@ -16,22 +16,7 @@ const sdk = useSDK();
 
 const newName = ref("");
 const selectedStepId = ref<string>();
-const requestEditor = sdk.ui.httpRequestEditor();
-const responseEditor = sdk.ui.httpResponseEditor();
-const requestHost = ref<HTMLElement>();
-const responseHost = ref<HTMLElement>();
-
-type Editable = { getEditorView: () => EditorView };
-
-const setText = (editor: Editable, text: string) => {
-  const view = editor.getEditorView();
-  view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: text },
-  });
-};
-
-const readText = (editor: Editable) =>
-  editor.getEditorView().state.doc.toString();
+const requestText = ref("");
 
 const sequenceOptions = computed(() =>
   workspace.rows.value.map((row) => ({
@@ -66,14 +51,14 @@ const saveStep = () => {
   const sequence = workspace.selectedSequence.value;
   const step = selectedStep.value;
   if (sequence === undefined || step === undefined) return;
-  workspace.saveStepRequest(sequence.id, step.id, readText(requestEditor));
+  workspace.saveStepRequest(sequence.id, step.id, requestText.value);
   sdk.window.showToast("Step saved", { variant: "success" });
 };
 
 const resetStep = () => {
   const template = stepTemplate.value;
   if (template === undefined) return;
-  setText(requestEditor, buildRawRequest(template));
+  requestText.value = buildRawRequest(template);
 };
 
 watch(
@@ -84,16 +69,13 @@ watch(
   { immediate: true },
 );
 
-watch(selectedStep, (step) => {
-  if (step !== undefined) setText(requestEditor, step.request);
-});
-
-onMounted(() => {
-  requestHost.value?.appendChild(requestEditor.getElement());
-  responseHost.value?.appendChild(responseEditor.getElement());
-  const step = selectedStep.value;
-  if (step !== undefined) setText(requestEditor, step.request);
-});
+watch(
+  selectedStep,
+  (step) => {
+    requestText.value = step === undefined ? "" : step.request;
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -188,11 +170,18 @@ onMounted(() => {
         </div>
 
         <Splitter layout="vertical" class="flex-1 min-h-0">
-          <SplitterPanel :size="50" :min-size="20" class="min-h-0">
-            <div
-              v-show="selectedStep !== undefined"
-              ref="requestHost"
-              class="h-full"
+          <SplitterPanel
+            :size="50"
+            :min-size="20"
+            class="min-h-0 flex flex-col"
+          >
+            <div class="px-3 py-1 text-xs text-surface-500">Request</div>
+            <Textarea
+              v-model="requestText"
+              :disabled="selectedStep === undefined"
+              spellcheck="false"
+              class="flex-1 min-h-0 w-full font-mono text-sm"
+              :pt="{ root: { class: 'h-full resize-none' } }"
             />
           </SplitterPanel>
           <SplitterPanel
@@ -203,10 +192,12 @@ onMounted(() => {
             <div class="px-3 py-1 text-xs text-surface-500">
               Response (not sent)
             </div>
-            <div
-              v-show="selectedStep !== undefined"
-              ref="responseHost"
-              class="flex-1 min-h-0"
+            <Textarea
+              value=""
+              readonly
+              spellcheck="false"
+              class="flex-1 min-h-0 w-full font-mono text-sm"
+              :pt="{ root: { class: 'h-full resize-none' } }"
             />
           </SplitterPanel>
         </Splitter>
