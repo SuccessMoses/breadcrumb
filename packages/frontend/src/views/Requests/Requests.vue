@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import Button from "primevue/button";
+import ContextMenu from "primevue/contextmenu";
 import InputText from "primevue/inputtext";
 import Select from "primevue/select";
 import Splitter from "primevue/splitter";
@@ -28,6 +29,33 @@ const methodColor = (method: string) => METHOD_COLORS[method] ?? "#9012fe";
 // The path as Swagger shows it: query parameters are left out
 const displayPath = (template: RequestTemplate) =>
   template.path.replace(/\?.*$/, "");
+
+const menu = ref<InstanceType<typeof ContextMenu>>();
+const menuTarget = ref<RequestTemplate>();
+
+const moveTarget = (collectionId: string) => {
+  const template = menuTarget.value;
+  if (template !== undefined) workspace.moveTemplate(template.id, collectionId);
+};
+
+const menuItems = computed(() => [
+  {
+    label: "Move to collection",
+    icon: "fas fa-folder",
+    items: workspace.state.collections.map((collection) => ({
+      label: collection.name,
+      disabled:
+        menuTarget.value !== undefined &&
+        workspace.collectionOf(menuTarget.value.id) === collection.id,
+      command: () => moveTarget(collection.id),
+    })),
+  },
+]);
+
+const openMenu = (event: MouseEvent, template: RequestTemplate) => {
+  menuTarget.value = template;
+  menu.value?.show(event);
+};
 
 const fileInput = ref<HTMLInputElement>();
 const selectedTemplateId = ref<string>();
@@ -284,6 +312,7 @@ onMounted(() => {
                 :class="
                   template.id === selectedTemplateId ? 'bg-surface-800' : ''
                 "
+                @contextmenu.prevent="openMenu($event, template)"
                 @click="selectedTemplateId = template.id"
               >
                 <span
@@ -400,5 +429,7 @@ onMounted(() => {
         />
       </SplitterPanel>
     </Splitter>
+
+    <ContextMenu ref="menu" :model="menuItems" />
   </div>
 </template>
