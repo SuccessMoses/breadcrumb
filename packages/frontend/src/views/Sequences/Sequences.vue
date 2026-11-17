@@ -11,6 +11,7 @@ import { useSDK } from "@/plugins/sdk";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
+const emit = defineEmits<{ openTemplate: [templateId: string] }>();
 const sdk = useSDK();
 
 const selectedStepId = ref<string>();
@@ -99,12 +100,34 @@ const sendSequence = () => {
   void sendSteps(steps);
 };
 
+// Double-click opens the template a step was rendered from, landing on it in
+// the Requests view
+const openTemplate = (step: SequenceStep) => {
+  if (!workspace.templatesById.value.has(step.templateId)) return;
+  selectedStepId.value = step.id;
+  workspace.setFocusTemplate(step.templateId);
+  emit("openTemplate", step.templateId);
+};
+
 watch(
   () => workspace.state.selectedSequenceId,
   () => {
     selectedStepId.value = workspace.selectedSequence.value?.steps[0]?.id;
   },
   { immediate: true },
+);
+
+// Double-clicking a sequence in the Tree asks for a specific step of it, so
+// pick that instead of the first step the watcher above chose.
+watch(
+  () => workspace.focusStep.value,
+  (stepId) => {
+    if (stepId === undefined) return;
+    const steps = workspace.selectedSequence.value?.steps ?? [];
+    if (!steps.some((step) => step.id === stepId)) return;
+    workspace.consumeFocusStep();
+    selectedStepId.value = stepId;
+  },
 );
 
 watch(selectedStep, (step) => {
@@ -182,6 +205,7 @@ onMounted(() => {
                 : 'text-surface-300'
             "
             @click="selectedStepId = step.id"
+            @dblclick="openTemplate(step)"
           >
             <span class="text-surface-500">{{ index + 1 }}</span>
             <span class="truncate">{{ requestLine(step.request) }}</span>

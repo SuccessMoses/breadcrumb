@@ -1,5 +1,12 @@
 import type { RequestTemplate, Sequence, SequenceStep } from "shared";
-import { computed, type ComputedRef, reactive, watch } from "vue";
+import {
+  computed,
+  type ComputedRef,
+  reactive,
+  ref,
+  type Ref,
+  watch,
+} from "vue";
 
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
@@ -22,6 +29,14 @@ export type Workspace = {
   templatesById: ComputedRef<Map<string, RequestTemplate>>;
   selectedSequence: ComputedRef<Sequence | undefined>;
   rows: ComputedRef<SequenceRow[]>;
+  // Step to select the next time its sequence is opened, consumed by Sequences
+  focusStep: Ref<string | undefined>;
+  setFocusStep: (stepId: string | undefined) => void;
+  consumeFocusStep: () => string | undefined;
+  // Template to select the next time Requests is shown, consumed by Requests
+  focusTemplate: Ref<string | undefined>;
+  setFocusTemplate: (templateId: string | undefined) => void;
+  consumeFocusTemplate: () => string | undefined;
   importTemplates: (templates: RequestTemplate[]) => void;
   extendSequence: (parentId: string, templateId: string) => void;
   deleteSequence: (id: string) => number;
@@ -128,6 +143,24 @@ const restoreSequences = (
 export const createWorkspace = (sdk: FrontendSDK): Workspace => {
   const stored = sdk.storage.get();
   const state = reactive<WorkspaceState>({ ...EMPTY });
+  const focusStep = ref<string>();
+  const setFocusStep = (stepId: string | undefined) => {
+    focusStep.value = stepId;
+  };
+  const consumeFocusStep = () => {
+    const stepId = focusStep.value;
+    focusStep.value = undefined;
+    return stepId;
+  };
+  const focusTemplate = ref<string>();
+  const setFocusTemplate = (templateId: string | undefined) => {
+    focusTemplate.value = templateId;
+  };
+  const consumeFocusTemplate = () => {
+    const templateId = focusTemplate.value;
+    focusTemplate.value = undefined;
+    return templateId;
+  };
   if (isState(stored)) {
     state.templates = stored.templates;
     state.sequences = restoreSequences(stored.sequences, stored.templates);
@@ -371,6 +404,12 @@ export const createWorkspace = (sdk: FrontendSDK): Workspace => {
     templatesById,
     selectedSequence,
     rows,
+    focusStep,
+    setFocusStep,
+    consumeFocusStep,
+    focusTemplate,
+    setFocusTemplate,
+    consumeFocusTemplate,
     importTemplates,
     extendSequence,
     deleteSequence,

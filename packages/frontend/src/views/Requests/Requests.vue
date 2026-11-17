@@ -124,6 +124,19 @@ const onFileChange = async (event: Event) => {
 
 watch(selectedTemplateId, showTemplateText);
 
+// A step opened from the Sequences view asks for the template behind it, so
+// drop any search that would hide the row and select it.
+watch(
+  () => workspace.focusTemplate.value,
+  (templateId) => {
+    if (templateId === undefined) return;
+    if (!workspace.templatesById.value.has(templateId)) return;
+    search.value = "";
+    selectedTemplateId.value = templateId;
+    workspace.consumeFocusTemplate();
+  },
+);
+
 onMounted(() => {
   if (editorHost.value !== undefined) {
     editor = createHttpEditor(editorHost.value, false);

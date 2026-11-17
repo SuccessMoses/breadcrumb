@@ -10,6 +10,7 @@ import { compilePattern, sequenceText } from "@/query/sequenceText";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
+const emit = defineEmits<{ openSequence: [id: string] }>();
 const sdk = useSDK();
 
 const menu = ref<InstanceType<typeof ContextMenu>>();
@@ -197,6 +198,13 @@ const openMenu = (event: MouseEvent, sequence: Sequence) => {
   menu.value?.show(event);
 };
 
+// Double-click opens the sequence, landing on the request it is named after
+const openSequence = (sequence: Sequence) => {
+  workspace.selectSequence(sequence.id);
+  workspace.setFocusStep(sequence.steps[sequence.steps.length - 1]?.id);
+  emit("openSequence", sequence.id);
+};
+
 const filteredTemplates = computed(() => {
   const query = search.value.trim().toLowerCase();
   const matches = (template: RequestTemplate) =>
@@ -299,6 +307,7 @@ const extendWith = (template: RequestTemplate) => {
         "
         :style="{ paddingLeft: `${row.depth * 1.5 + 0.75}rem` }"
         @click="workspace.selectSequence(row.sequence.id)"
+        @dblclick="openSequence(row.sequence)"
         @contextmenu.prevent="openMenu($event, row.sequence)"
       >
         <span
@@ -306,6 +315,7 @@ const extendWith = (template: RequestTemplate) => {
           class="w-4 shrink-0 cursor-pointer text-center text-surface-500 hover:text-surface-100"
           :title="isCollapsed(row.sequence.id) ? 'Expand' : 'Collapse'"
           @click.stop="toggleCollapsed(row.sequence.id)"
+          @dblclick.stop
         >
           <i
             class="fas fa-chevron-right text-xs transition-transform"

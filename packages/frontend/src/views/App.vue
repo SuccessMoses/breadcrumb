@@ -4,6 +4,7 @@ import TabList from "primevue/tablist";
 import TabPanel from "primevue/tabpanel";
 import TabPanels from "primevue/tabpanels";
 import Tabs from "primevue/tabs";
+import { ref } from "vue";
 
 import { Requests } from "./Requests";
 import { Sequences } from "./Sequences";
@@ -14,10 +15,21 @@ import { createWorkspace } from "@/workspace/workspace";
 
 const sdk = useSDK();
 const workspace = createWorkspace(sdk);
+const activeTab = ref("requests");
+
+// Opening a sequence from the Tree jumps to its view
+const showSequence = () => {
+  activeTab.value = "sequences";
+};
+
+// Opening a step from a sequence jumps to its request template
+const showTemplate = () => {
+  activeTab.value = "requests";
+};
 </script>
 
 <template>
-  <Tabs value="requests" class="h-full flex flex-col">
+  <Tabs v-model:value="activeTab" class="h-full flex flex-col">
     <TabList>
       <Tab value="requests">Requests</Tab>
       <Tab value="sequences">Sequences</Tab>
@@ -28,10 +40,10 @@ const workspace = createWorkspace(sdk);
         ><Requests :workspace="workspace"
       /></TabPanel>
       <TabPanel value="sequences" class="h-full"
-        ><Sequences :workspace="workspace"
+        ><Sequences :workspace="workspace" @open-template="showTemplate"
       /></TabPanel>
       <TabPanel value="tree" class="h-full"
-        ><Tree :workspace="workspace"
+        ><Tree :workspace="workspace" @open-sequence="showSequence"
       /></TabPanel>
     </TabPanels>
   </Tabs>
