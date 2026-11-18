@@ -135,6 +135,39 @@ const visibleRows = computed(() => {
   return rows;
 });
 
+type Guide = { guides: boolean[]; last: boolean };
+
+// How each visible row is connected to its neighbours. guides[c] says a line
+// runs down lane c past this row (a later sibling of that lane's ancestor). last
+// says no sibling follows, so the elbow stops at the middle. Computed from the
+// visible rows, so collapsing or filtering keeps the lines joined.
+const guides = computed(() => {
+  const byId = new Map<string, Guide>();
+  // seenBelow[d]: a row at depth d follows, before any row shallower than d
+  const seenBelow: boolean[] = [];
+  const rows = visibleRows.value;
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    if (row === undefined) continue;
+    const { sequence, depth } = row;
+    byId.set(sequence.id, {
+      guides: Array.from(
+        { length: Math.max(depth - 1, 0) },
+        (_, lane) => seenBelow[lane + 1] === true,
+      ),
+      last: seenBelow[depth] !== true,
+    });
+    seenBelow[depth] = true;
+    for (let deeper = depth + 1; deeper < seenBelow.length; deeper++) {
+      seenBelow[deeper] = false;
+    }
+  }
+  return byId;
+});
+
+const guideOf = (id: string): Guide =>
+  guides.value.get(id) ?? { guides: [], last: true };
+
 const deleteTarget = () => {
   const target = extendTarget.value;
   if (target === undefined) return;
@@ -363,55 +396,81 @@ const extendPicked = async () => {
         :key="row.sequence.id"
         type="button"
         :title="sequenceTitle(row.sequence)"
-        class="w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
+        class="w-full flex items-center h-7 pl-3 pr-3 text-left text-sm hover:bg-surface-800"
         :class="
           row.sequence.id === workspace.state.selectedSequenceId
             ? 'bg-surface-800 text-surface-100'
             : 'text-surface-300'
         "
-        :style="{ paddingLeft: `${row.depth * 1.5 + 0.75}rem` }"
         @click="workspace.selectSequence(row.sequence.id)"
         @dblclick="openSequence(row.sequence)"
         @contextmenu.prevent="openMenu($event, row.sequence)"
       >
+        <!-- One lane per ancestor depth. The last lane is this row's own elbow. -->
         <span
-          v-if="!filtering && hasChildren(row.sequence.id)"
-          class="w-4 shrink-0 cursor-pointer text-center text-surface-500 hover:text-surface-100"
-          :title="isCollapsed(row.sequence.id) ? 'Expand' : 'Collapse'"
-          @click.stop="toggleCollapsed(row.sequence.id)"
-          @dblclick.stop
+          v-for="(_lane, lane) in row.depth"
+          :key="lane"
+          class="relative h-full w-5 shrink-0"
         >
-          <i
-            class="fas fa-chevron-right text-xs transition-transform"
-            :class="{ 'rotate-90': !isCollapsed(row.sequence.id) }"
+          <span
+            v-if="lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]"
+            class="absolute inset-y-0 left-1/2 border-l border-surface-600"
           />
+          <template v-if="lane === row.depth - 1">
+            <span
+              class="absolute top-0 left-1/2 h-1/2 border-l border-surface-600"
+            />
+            <span
+              v-if="!guideOf(row.sequence.id).last"
+              class="absolute top-1/2 bottom-0 left-1/2 border-l border-surface-600"
+            />
+            <span
+              class="absolute top-1/2 right-0 left-1/2 border-t border-surface-600"
+            />
+          </template>
         </span>
-        <span v-else class="w-4 shrink-0" />
-        <i
-          v-if="row.depth > 0"
-          class="fas fa-turn-down-right text-surface-500"
-        />
-        <i v-else class="fas fa-folder text-surface-500" />
-        <span
-          v-if="workspace.sequenceMethod(row.sequence) !== undefined"
-          class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
-          :style="{
-            backgroundColor: methodColor(
-              workspace.sequenceMethod(row.sequence) ?? '',
-            ),
-          }"
-          >{{ workspace.sequenceMethod(row.sequence) }}</span
-        >
-        <span class="truncate">{{ workspace.sequencePath(row.sequence) }}</span>
-        <span
-          v-if="!filtering && isCollapsed(row.sequence.id)"
-          class="text-xs text-surface-500 whitespace-nowrap"
-        >
-          ({{ descendantCounts.get(row.sequence.id) }} hidden)
-        </span>
-        <span class="ml-auto text-xs text-surface-500">
-          {{ row.sequence.steps.length }} steps
-        </span>
+        <div class="flex min-w-0 flex-1 items-center gap-2">
+          <span class="flex h-full w-5 shrink-0 items-center justify-center">
+            <span
+              v-if="!filtering && hasChildren(row.sequence.id)"
+              class="cursor-pointer text-surface-500 hover:text-surface-100"
+              :title="isCollapsed(row.sequence.id) ? 'Expand' : 'Collapse'"
+              @click.stop="toggleCollapsed(row.sequence.id)"
+              @dblclick.stop
+            >
+              <i
+                class="fas fa-chevron-right text-xs transition-transform"
+                :class="{ 'rotate-90': !isCollapsed(row.sequence.id) }"
+              />
+            </span>
+            <i
+              v-else-if="row.depth === 0"
+              class="fas fa-folder text-surface-500"
+            />
+          </span>
+          <span
+            v-if="workspace.sequenceMethod(row.sequence) !== undefined"
+            class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
+            :style="{
+              backgroundColor: methodColor(
+                workspace.sequenceMethod(row.sequence) ?? '',
+              ),
+            }"
+            >{{ workspace.sequenceMethod(row.sequence) }}</span
+          >
+          <span class="truncate">{{
+            workspace.sequencePath(row.sequence)
+          }}</span>
+          <span
+            v-if="!filtering && isCollapsed(row.sequence.id)"
+            class="text-xs text-surface-500 whitespace-nowrap"
+          >
+            ({{ descendantCounts.get(row.sequence.id) }} hidden)
+          </span>
+          <span class="ml-auto text-xs text-surface-500">
+            {{ row.sequence.steps.length }} steps
+          </span>
+        </div>
       </button>
     </div>
 
