@@ -187,12 +187,6 @@ const ancestorsById = computed(() => {
   return chains;
 });
 
-// The selected sequence's ancestors: their branch lines are traced in gold
-const traced = computed(() => {
-  const id = workspace.state.selectedSequenceId;
-  return new Set(id === undefined ? [] : (ancestorsById.value.get(id) ?? []));
-});
-
 // The selected sequence and its ancestors: their elbows are traced in gold
 const onPath = computed(() => {
   const id = workspace.state.selectedSequenceId;
@@ -201,12 +195,50 @@ const onPath = computed(() => {
   );
 });
 
-// A lane's line belongs to the ancestor at that depth, so it is gold when that
-// ancestor is on the selected path
-const laneColor = (id: string, lane: number) =>
-  traced.value.has((ancestorsById.value.get(id) ?? [])[lane] ?? "")
+// For each traced ancestor, the row of its child on the path: its branch line is
+// gold down to that row and no further
+const pathEndById = computed(() => {
+  const id = workspace.state.selectedSequenceId;
+  const rows = new Map(
+    visibleRows.value.map((row, index) => [row.sequence.id, index]),
+  );
+  const ends = new Map<string, number>();
+  if (id === undefined) return ends;
+  const chain = [...(ancestorsById.value.get(id) ?? []), id];
+  for (let k = 0; k < chain.length - 1; k++) {
+    const parent = chain[k];
+    const child = chain[k + 1];
+    const end = child === undefined ? undefined : rows.get(child);
+    if (parent !== undefined && end !== undefined) ends.set(parent, end);
+  }
+  return ends;
+});
+
+const rowIndexOf = (id: string) =>
+  visibleRows.value.findIndex((row) => row.sequence.id === id);
+
+// A lane is the branch line of the ancestor at its depth. The top half of a row's
+// lane is gold up to and including the path child's row; the bottom half only above it
+const laneGold = (id: string, lane: number, half: "top" | "bottom") => {
+  const ancestor = (ancestorsById.value.get(id) ?? [])[lane];
+  const end =
+    ancestor === undefined ? undefined : pathEndById.value.get(ancestor);
+  const index = rowIndexOf(id);
+  if (end === undefined || index < 0) return false;
+  return half === "top" ? index <= end : index < end;
+};
+
+const laneColor = (id: string, lane: number, half: "top" | "bottom") =>
+  laneGold(id, lane, half) ? "border-amber-400" : "border-surface-600";
+
+// The trunk of a parent is gold down to its path child
+const trunkColor = (id: string) => {
+  const end = pathEndById.value.get(id);
+  const index = rowIndexOf(id);
+  return end !== undefined && index >= 0 && index < end
     ? "border-amber-400"
     : "border-surface-600";
+};
 
 // Clicking a branch line collapses or expands the sequence it hangs from
 const toggleLane = (id: string, lane: number) => {
@@ -629,20 +661,27 @@ const clickRow = (sequence: Sequence) => {
           class="relative h-full shrink-0"
           :style="{ width: `${indent}rem` }"
         >
-          <span
+          <template
             v-if="lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]"
-            class="absolute inset-y-0 left-1/2 border-l"
-            :class="laneColor(row.sequence.id, lane)"
-          />
+          >
+            <span
+              class="absolute top-0 h-1/2 left-1/2 border-l"
+              :class="laneColor(row.sequence.id, lane, 'top')"
+            />
+            <span
+              class="absolute top-1/2 bottom-0 left-1/2 border-l"
+              :class="laneColor(row.sequence.id, lane, 'bottom')"
+            />
+          </template>
           <template v-if="lane === row.depth - 1">
             <span
               class="absolute top-0 left-1/2 h-1/2 border-l"
-              :class="laneColor(row.sequence.id, lane)"
+              :class="laneColor(row.sequence.id, lane, 'top')"
             />
             <span
               v-if="!guideOf(row.sequence.id).last"
               class="absolute top-1/2 bottom-0 left-1/2 border-l"
-              :class="laneColor(row.sequence.id, lane)"
+              :class="laneColor(row.sequence.id, lane, 'bottom')"
             />
             <span
               class="absolute top-1/2 left-1/2 border-t"
@@ -672,9 +711,7 @@ const clickRow = (sequence: Sequence) => {
               <span
                 class="absolute top-1/2 bottom-0 left-1/2 border-l"
                 :class="[
-                  traced.has(row.sequence.id)
-                    ? 'border-amber-400'
-                    : 'border-surface-600',
+                  trunkColor(row.sequence.id),
                   isCollapsed(row.sequence.id) ? 'border-dashed' : '',
                 ]"
               />
