@@ -192,14 +192,6 @@ const ancestorsById = computed(() => {
   return chains;
 });
 
-// The selected sequence and its ancestors: their elbows are traced in gold
-const onPath = computed(() => {
-  const id = workspace.state.selectedSequenceId;
-  return new Set(
-    id === undefined ? [] : [...(ancestorsById.value.get(id) ?? []), id],
-  );
-});
-
 // For each traced ancestor, the row of its child on the path: its branch line is
 // gold down to that row and no further
 // Everything whose branch lines light up: the selected sequence and every
@@ -688,11 +680,9 @@ const clickRow = (sequence: Sequence, event: MouseEvent) => {
           height: `max(1.75rem, ${fontSize * 2}px)`,
         }"
         :class="
-          onPath.has(row.sequence.id)
+          litIds.has(row.sequence.id)
             ? 'text-amber-200 font-bold'
-            : selected.has(row.sequence.id)
-              ? 'bg-surface-700 text-surface-100'
-              : 'text-surface-300 hover:bg-surface-800'
+            : 'text-surface-300 hover:bg-surface-800'
         "
         @click="clickRow(row.sequence, $event)"
         @contextmenu.prevent="openMenu($event, row.sequence)"
