@@ -649,8 +649,11 @@ const clickRow = (sequence: Sequence) => {
         v-for="row in visibleRows"
         :key="row.sequence.id"
         type="button"
-        class="w-full flex items-center pl-3 pr-3 py-0.5 text-left"
-        :style="{ fontSize: `${fontSize}px`, minHeight: '1.75rem' }"
+        class="w-full flex items-center pl-3 pr-3 text-left"
+        :style="{
+          fontSize: `${fontSize}px`,
+          height: `max(1.75rem, ${fontSize * 2}px)`,
+        }"
         :class="
           onPath.has(row.sequence.id)
             ? 'text-amber-200 font-bold'
