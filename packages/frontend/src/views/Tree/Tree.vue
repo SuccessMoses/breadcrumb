@@ -253,29 +253,35 @@ const toggleLane = (id: string, lane: number) => {
 
 // Batch selection. Hidden rows are dropped from it, so actions only touch what is shown.
 const selected = ref<Set<string>>(new Set());
-const anchorId = ref<string>();
 
-const toggleSelected = (id: string, event: MouseEvent) => {
-  const next = new Set(selected.value);
-  if (event.shiftKey && anchorId.value !== undefined) {
-    const ids = visibleRows.value.map((row) => row.sequence.id);
-    const from = ids.indexOf(anchorId.value);
-    const to = ids.indexOf(id);
-    if (from !== -1 && to !== -1) {
-      for (const rowId of ids.slice(
-        Math.min(from, to),
-        Math.max(from, to) + 1,
-      )) {
-        next.add(rowId);
-      }
+// The sequence and every sequence below it
+const subtreeOf = (id: string): string[] => {
+  const childrenOf = new Map<string, string[]>();
+  for (const sequence of workspace.state.sequences) {
+    if (sequence.parentId === undefined) continue;
+    const siblings = childrenOf.get(sequence.parentId);
+    if (siblings === undefined) {
+      childrenOf.set(sequence.parentId, [sequence.id]);
+    } else {
+      siblings.push(sequence.id);
     }
-  } else if (next.has(id)) {
-    next.delete(id);
-  } else {
-    next.add(id);
+  }
+  const ids = [id];
+  for (let i = 0; i < ids.length; i++) {
+    ids.push(...(childrenOf.get(ids[i] ?? "") ?? []));
+  }
+  return ids;
+};
+
+// Shift-click adds a sequence and all its children, or removes them if it was selected
+const toggleSubtree = (id: string) => {
+  const next = new Set(selected.value);
+  const ids = subtreeOf(id);
+  for (const rowId of ids) {
+    if (selected.value.has(id)) next.delete(rowId);
+    else next.add(rowId);
   }
   selected.value = next;
-  anchorId.value = id;
 };
 
 watch(visibleRows, (rows) => {
@@ -526,8 +532,13 @@ const openSequence = (sequence: Sequence) => {
   emit("openSequence", sequence.id);
 };
 
-// The first click selects and traces the path; a click on the selected row opens it
-const clickRow = (sequence: Sequence) => {
+// The first click selects and traces the path; a click on the selected row opens it.
+// Shift-click batches the sequence and its children instead.
+const clickRow = (sequence: Sequence, event: MouseEvent) => {
+  if (event.shiftKey) {
+    toggleSubtree(sequence.id);
+    return;
+  }
   if (sequence.id === workspace.state.selectedSequenceId) {
     openSequence(sequence);
   } else {
@@ -649,7 +660,7 @@ const clickRow = (sequence: Sequence) => {
         v-for="row in visibleRows"
         :key="row.sequence.id"
         type="button"
-        class="w-full flex items-center pl-3 pr-3 text-left"
+        class="w-full flex items-center pl-3 pr-3 text-left select-none"
         :style="{
           fontSize: `${fontSize}px`,
           height: `max(1.75rem, ${fontSize * 2}px)`,
@@ -657,9 +668,11 @@ const clickRow = (sequence: Sequence) => {
         :class="
           onPath.has(row.sequence.id)
             ? 'text-amber-200 font-bold'
-            : 'text-surface-300 hover:bg-surface-800'
+            : selected.has(row.sequence.id)
+              ? 'bg-surface-700 text-surface-100'
+              : 'text-surface-300 hover:bg-surface-800'
         "
-        @click="clickRow(row.sequence)"
+        @click="clickRow(row.sequence, $event)"
         @contextmenu.prevent="openMenu($event, row.sequence)"
       >
         <!-- One lane per ancestor depth. The last lane is this row's own elbow,
@@ -751,16 +764,6 @@ const clickRow = (sequence: Sequence) => {
           </span>
           <span class="ml-auto text-xs text-surface-500">
             {{ row.sequence.steps.length }} steps
-          </span>
-          <span
-            role="checkbox"
-            :aria-checked="selected.has(row.sequence.id)"
-            title="Select for batch actions. Shift-click selects a range."
-            class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-surface-500 text-xs"
-            :class="selected.has(row.sequence.id) ? 'bg-surface-600' : ''"
-            @click.stop="toggleSelected(row.sequence.id, $event)"
-          >
-            <i v-if="selected.has(row.sequence.id)" class="fas fa-check" />
           </span>
         </div>
       </button>
