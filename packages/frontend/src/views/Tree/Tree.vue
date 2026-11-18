@@ -170,6 +170,50 @@ const guides = computed(() => {
 const guideOf = (id: string): Guide =>
   guides.value.get(id) ?? { guides: [], last: true };
 
+// Ancestor ids by depth: the ancestor at depth k is at index k, root first
+const ancestorsById = computed(() => {
+  const byId = new Map(workspace.state.sequences.map((s) => [s.id, s]));
+  const chains = new Map<string, string[]>();
+  const chainOf = (id: string): string[] => {
+    const known = chains.get(id);
+    if (known !== undefined) return known;
+    const parentId = byId.get(id)?.parentId;
+    const chain =
+      parentId === undefined ? [] : [...chainOf(parentId), parentId];
+    chains.set(id, chain);
+    return chain;
+  };
+  for (const sequence of workspace.state.sequences) chainOf(sequence.id);
+  return chains;
+});
+
+// The selected sequence's ancestors: their branch lines are traced in gold
+const traced = computed(() => {
+  const id = workspace.state.selectedSequenceId;
+  return new Set(id === undefined ? [] : (ancestorsById.value.get(id) ?? []));
+});
+
+// The selected sequence and its ancestors: their elbows are traced in gold
+const onPath = computed(() => {
+  const id = workspace.state.selectedSequenceId;
+  return new Set(
+    id === undefined ? [] : [...(ancestorsById.value.get(id) ?? []), id],
+  );
+});
+
+// A lane's line belongs to the ancestor at that depth, so it is gold when that
+// ancestor is on the selected path
+const laneColor = (id: string, lane: number) =>
+  traced.value.has((ancestorsById.value.get(id) ?? [])[lane] ?? "")
+    ? "border-amber-400"
+    : "border-surface-600";
+
+// Clicking a branch line collapses or expands the sequence it hangs from
+const toggleLane = (id: string, lane: number) => {
+  const ancestor = (ancestorsById.value.get(id) ?? [])[lane];
+  if (ancestor !== undefined) toggleCollapsed(ancestor);
+};
+
 // Batch selection. Hidden rows are dropped from it, so actions only touch what is shown.
 const selected = ref<Set<string>>(new Set());
 const anchorId = ref<string>();
@@ -438,7 +482,7 @@ const openMenu = (event: MouseEvent, sequence: Sequence) => {
   menu.value?.show(event);
 };
 
-// Click opens the sequence, landing on the request it is named after
+// Double-click opens the sequence, landing on the request it is named after
 const openSequence = (sequence: Sequence) => {
   workspace.selectSequence(sequence.id);
   workspace.setFocusStep(sequence.steps[sequence.steps.length - 1]?.id);
@@ -565,7 +609,8 @@ const openSequence = (sequence: Sequence) => {
             ? 'bg-amber-400/20 text-amber-200 shadow-[inset_3px_0_0_0_#fbbf24]'
             : 'text-surface-300'
         "
-        @click="openSequence(row.sequence)"
+        @click="workspace.selectSequence(row.sequence.id)"
+        @dblclick="openSequence(row.sequence)"
         @contextmenu.prevent="openMenu($event, row.sequence)"
       >
         <!-- One lane per ancestor depth. The last lane is this row's own elbow,
@@ -578,39 +623,58 @@ const openSequence = (sequence: Sequence) => {
         >
           <span
             v-if="lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]"
-            class="absolute inset-y-0 left-1/2 border-l border-surface-600"
+            class="absolute inset-y-0 left-1/2 border-l"
+            :class="laneColor(row.sequence.id, lane)"
           />
           <template v-if="lane === row.depth - 1">
             <span
-              class="absolute top-0 left-1/2 h-1/2 border-l border-surface-600"
+              class="absolute top-0 left-1/2 h-1/2 border-l"
+              :class="laneColor(row.sequence.id, lane)"
             />
             <span
               v-if="!guideOf(row.sequence.id).last"
-              class="absolute top-1/2 bottom-0 left-1/2 border-l border-surface-600"
+              class="absolute top-1/2 bottom-0 left-1/2 border-l"
+              :class="laneColor(row.sequence.id, lane)"
             />
             <span
-              class="absolute top-1/2 left-1/2 border-t border-surface-600"
+              class="absolute top-1/2 left-1/2 border-t"
+              :class="
+                onPath.has(row.sequence.id)
+                  ? 'border-amber-400'
+                  : 'border-surface-600'
+              "
               :style="{ width: `calc(${indent / 2}rem + 1rem)` }"
             />
           </template>
+          <span
+            v-if="
+              !filtering &&
+              (lane === row.depth - 1 || guideOf(row.sequence.id).guides[lane])
+            "
+            class="absolute inset-y-0 left-1/2 w-3 -translate-x-1/2 cursor-pointer"
+            @click.stop="toggleLane(row.sequence.id, lane)"
+          />
         </span>
         <div class="flex min-w-0 flex-1 items-center gap-2">
-          <span class="flex h-full w-4 shrink-0 items-center justify-center">
-            <span
-              v-if="!filtering && hasChildren(row.sequence.id)"
-              class="cursor-pointer text-surface-500 hover:text-surface-100"
-              :title="isCollapsed(row.sequence.id) ? 'Expand' : 'Collapse'"
-              @click.stop="toggleCollapsed(row.sequence.id)"
-            >
-              <i
-                class="fas fa-chevron-right text-xs transition-transform"
-                :class="{ 'rotate-90': !isCollapsed(row.sequence.id) }"
+          <span
+            class="relative flex h-full w-4 shrink-0 items-center justify-center"
+          >
+            <i v-if="row.depth === 0" class="fas fa-folder text-surface-500" />
+            <template v-if="!filtering && hasChildren(row.sequence.id)">
+              <span
+                class="absolute top-1/2 bottom-0 left-1/2 border-l"
+                :class="[
+                  traced.has(row.sequence.id)
+                    ? 'border-amber-400'
+                    : 'border-surface-600',
+                  isCollapsed(row.sequence.id) ? 'border-dashed' : '',
+                ]"
               />
-            </span>
-            <i
-              v-else-if="row.depth === 0"
-              class="fas fa-folder text-surface-500"
-            />
+              <span
+                class="absolute inset-y-0 left-1/2 w-3 -translate-x-1/2 cursor-pointer"
+                @click.stop="toggleCollapsed(row.sequence.id)"
+              />
+            </template>
           </span>
           <span
             v-if="workspace.sequenceMethod(row.sequence) !== undefined"
