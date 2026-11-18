@@ -131,6 +131,8 @@ watch(
     workspace.consumeFocusStep();
     selectedStepId.value = stepId;
   },
+  // Immediate: the view is mounted when its tab opens, after the step was asked for
+  { immediate: true },
 );
 
 watch(selectedStep, (step) => {

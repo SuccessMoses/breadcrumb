@@ -63,7 +63,7 @@ const showTemplate = () => {
     </TabList>
     <TabPanels class="flex-1 min-h-0 p-0">
       <TabPanel value="requests" class="h-full"
-        ><Requests :workspace="workspace"
+        ><Requests :workspace="workspace" @open-sequence="showSequence"
       /></TabPanel>
       <TabPanel value="sequences" class="h-full"
         ><Sequences :workspace="workspace" @open-template="showTemplate"

@@ -17,7 +17,31 @@ import { type Capture, NO_RULE, type TemplateRule } from "@/workspace/captures";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
+const emit = defineEmits<{ openSequence: [sequenceId: string] }>();
 const sdk = useSDK();
+
+const renderCount = (templateId: string) =>
+  workspace.renderings.value.get(templateId)?.length ?? 0;
+
+// Double-click jumps to the newest sequence that rendered this template
+const openRendering = (templateId: string) => {
+  const rendering = workspace.renderings.value.get(templateId)?.at(-1);
+  if (rendering === undefined) {
+    sdk.window.showToast("This template has not been rendered yet", {
+      variant: "info",
+    });
+    return;
+  }
+  workspace.selectSequence(rendering.sequenceId);
+  workspace.setFocusStep(rendering.stepId);
+  emit("openSequence", rendering.sequenceId);
+};
+
+const selectedRenderCount = computed(() =>
+  selectedTemplateId.value === undefined
+    ? 0
+    : renderCount(selectedTemplateId.value),
+);
 
 const METHOD_COLORS: Partial<Record<string, string>> = {
   GET: "#61affe",
@@ -376,6 +400,7 @@ onMounted(() => {
                 "
                 @contextmenu.prevent="openMenu($event, template)"
                 @click="selectedTemplateId = template.id"
+                @dblclick="openRendering(template.id)"
               >
                 <span
                   class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
@@ -385,9 +410,15 @@ onMounted(() => {
                 <span class="font-mono truncate text-surface-200">{{
                   displayPath(template)
                 }}</span>
-                <span class="ml-auto truncate text-xs text-surface-500">{{
+                <span class="truncate text-xs text-surface-500">{{
                   template.summary
                 }}</span>
+                <span
+                  v-if="renderCount(template.id) > 0"
+                  class="ml-auto shrink-0 rounded border border-surface-600 px-1.5 text-xs text-surface-300"
+                  :title="`Rendered in ${renderCount(template.id)} step(s). Double-click to open the newest.`"
+                  >Rendered ×{{ renderCount(template.id) }}</span
+                >
               </button>
             </template>
           </template>
@@ -413,6 +444,11 @@ onMounted(() => {
                 ? ""
                 : displayPath(selectedTemplate)
             }}</span>
+            <span
+              v-if="selectedRenderCount > 0"
+              class="whitespace-nowrap rounded border border-surface-600 px-1.5 text-xs text-surface-300"
+              >Rendered ×{{ selectedRenderCount }}</span
+            >
           </div>
           <div class="flex items-center gap-2">
             <Select

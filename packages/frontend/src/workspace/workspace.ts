@@ -47,6 +47,8 @@ type RenderResult =
     }
   | { kind: "error"; message: string };
 
+type Rendering = { sequenceId: string; stepId: string };
+
 type SequenceRow = {
   sequence: Sequence;
   depth: number;
@@ -55,6 +57,8 @@ type SequenceRow = {
 export type Workspace = {
   state: WorkspaceState;
   templatesById: ComputedRef<Map<string, RequestTemplate>>;
+  // Every step rendered from a template, oldest first
+  renderings: ComputedRef<Map<string, Rendering[]>>;
   selectedSequence: ComputedRef<Sequence | undefined>;
   rows: ComputedRef<SequenceRow[]>;
   // Step to select the next time its sequence is opened, consumed by Sequences
@@ -384,6 +388,18 @@ export const createWorkspace = (
   const templatesById = computed(
     () => new Map(state.templates.map((t) => [t.id, t])),
   );
+  // Sequences are kept in creation order, so the last entry is the newest
+  const renderings = computed(() => {
+    const byTemplate = new Map<string, Rendering[]>();
+    for (const sequence of state.sequences) {
+      for (const step of sequence.steps) {
+        const list = byTemplate.get(step.templateId) ?? [];
+        list.push({ sequenceId: sequence.id, stepId: step.id });
+        byTemplate.set(step.templateId, list);
+      }
+    }
+    return byTemplate;
+  });
   const selectedSequence = computed(() =>
     state.sequences.find((s) => s.id === state.selectedSequenceId),
   );
@@ -642,6 +658,7 @@ export const createWorkspace = (
   return {
     state,
     templatesById,
+    renderings,
     selectedSequence,
     rows,
     focusStep,
