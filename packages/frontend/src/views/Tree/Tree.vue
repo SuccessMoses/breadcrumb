@@ -192,8 +192,6 @@ const ancestorsById = computed(() => {
   return chains;
 });
 
-// For each traced ancestor, the row of its child on the path: its branch line is
-// gold down to that row and no further
 // Everything whose branch lines light up: the selected sequence and every
 // batch-selected one, each traced through its ancestors to the root
 const litSources = computed(() => {
