@@ -7,7 +7,7 @@ import { computed, ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
-import { methodColor } from "@/requests/display";
+import { displayPath, methodColor } from "@/requests/display";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
@@ -396,14 +396,13 @@ const extendWith = async (template: RequestTemplate) => {
             class="flex items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
             @click="extendWith(template)"
           >
-            <span class="w-16 font-mono text-surface-400">{{
-              template.method
-            }}</span>
-            <span class="truncate text-surface-100">{{
-              workspace.templateAlias(template)
-            }}</span>
-            <span class="ml-auto truncate font-mono text-xs text-surface-500">{{
-              template.url
+            <span
+              class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
+              :style="{ backgroundColor: methodColor(template.method) }"
+              >{{ template.method }}</span
+            >
+            <span class="truncate font-mono text-surface-200">{{
+              displayPath(template)
             }}</span>
           </button>
         </div>
