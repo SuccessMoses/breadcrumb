@@ -647,7 +647,7 @@ const clickRow = (sequence: Sequence) => {
         class="w-full flex items-center h-7 pl-3 pr-3 text-left text-sm"
         :class="
           row.sequence.id === workspace.state.selectedSequenceId
-            ? 'bg-amber-400/20 text-amber-200 shadow-[inset_3px_0_0_0_#fbbf24]'
+            ? 'text-amber-200'
             : 'text-surface-300 hover:bg-surface-800'
         "
         @click="clickRow(row.sequence)"
