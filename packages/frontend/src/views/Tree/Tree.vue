@@ -258,7 +258,6 @@ const rerenderSelected = async () => {
 
 // Extend and Grow are one dialog: with one generation it extends each source once
 const MAX_GENERATIONS = 5;
-const GROW_LIMIT = 200;
 const growDialog = ref(false);
 const growSources = ref<Sequence[]>([]);
 const growTypes = ref<string[]>([]);
@@ -391,14 +390,6 @@ const subtreeStepCount = (id: string): number => {
     children.reduce((sum, child) => sum + subtreeStepCount(child.id), 0)
   );
 };
-
-// Hover text: the sequence's steps, one request line each
-const sequenceTitle = (sequence: Sequence) =>
-  sequence.steps.length === 0
-    ? "No steps"
-    : sequence.steps
-        .map((step, index) => `${index + 1}. ${step.request.split(/\r?\n/)[0]}`)
-        .join("\n");
 
 const rerenderTarget = async () => {
   const target = extendTarget.value;
@@ -568,7 +559,6 @@ const openSequence = (sequence: Sequence) => {
         v-for="row in visibleRows"
         :key="row.sequence.id"
         type="button"
-        :title="sequenceTitle(row.sequence)"
         class="w-full flex items-center h-7 pl-3 pr-3 text-left text-sm hover:bg-surface-800"
         :class="
           row.sequence.id === workspace.state.selectedSequenceId
@@ -725,13 +715,8 @@ const openSequence = (sequence: Sequence) => {
         <div
           class="flex items-center justify-between gap-2 border-t border-surface-700 pt-3 text-sm"
         >
-          <span
-            :class="
-              growEstimate > GROW_LIMIT ? 'text-red-400' : 'text-surface-400'
-            "
-          >
-            Up to {{ growEstimate }} sequence(s). Limit {{ GROW_LIMIT }} per
-            run.
+          <span class="text-surface-400">
+            Up to {{ growEstimate }} sequence(s)
           </span>
           <Button
             v-if="growRunning"
@@ -744,11 +729,7 @@ const openSequence = (sequence: Sequence) => {
             v-else
             label="Run"
             size="small"
-            :disabled="
-              growTypes.length === 0 ||
-              growEstimate === 0 ||
-              growEstimate > GROW_LIMIT
-            "
+            :disabled="growTypes.length === 0 || growEstimate === 0"
             @click="runGrow"
           />
         </div>
