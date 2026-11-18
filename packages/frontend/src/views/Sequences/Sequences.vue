@@ -92,11 +92,6 @@ const sendStep = () => {
   if (step !== undefined) void sendSteps([step]);
 };
 
-const sendSequence = () => {
-  const steps = workspace.selectedSequence.value?.steps ?? [];
-  void sendSteps(steps);
-};
-
 // Double-click opens the template a step was rendered from, landing on it in
 // the Requests view
 const openTemplate = (step: SequenceStep) => {
@@ -248,15 +243,6 @@ onMounted(() => {
               severity="secondary"
               :disabled="selectedStep === undefined || sending"
               @click="sendStep"
-            />
-            <Button
-              label="Send sequence"
-              size="small"
-              :disabled="
-                (workspace.selectedSequence.value?.steps.length ?? 0) === 0 ||
-                sending
-              "
-              @click="sendSequence"
             />
           </div>
         </div>
