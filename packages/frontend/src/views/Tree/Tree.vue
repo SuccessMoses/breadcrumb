@@ -33,6 +33,11 @@ const indent = computed(() =>
     ? settings.value.indent
     : DEFAULT_TREE_SETTINGS.indent,
 );
+const fontSize = computed(() =>
+  Number.isFinite(settings.value.fontSize)
+    ? settings.value.fontSize
+    : DEFAULT_TREE_SETTINGS.fontSize,
+);
 
 const resetSettings = () => {
   settings.value = { ...DEFAULT_TREE_SETTINGS };
@@ -644,10 +649,11 @@ const clickRow = (sequence: Sequence) => {
         v-for="row in visibleRows"
         :key="row.sequence.id"
         type="button"
-        class="w-full flex items-center h-7 pl-3 pr-3 text-left text-sm"
+        class="w-full flex items-center pl-3 pr-3 py-0.5 text-left"
+        :style="{ fontSize: `${fontSize}px`, minHeight: '1.75rem' }"
         :class="
-          row.sequence.id === workspace.state.selectedSequenceId
-            ? 'text-amber-200'
+          onPath.has(row.sequence.id)
+            ? 'text-amber-200 font-bold'
             : 'text-surface-300 hover:bg-surface-800'
         "
         @click="clickRow(row.sequence)"
@@ -860,6 +866,17 @@ const clickRow = (sequence: Sequence) => {
             min="0.5"
             max="6"
             step="0.25"
+            class="w-24 rounded border border-surface-600 bg-surface-900 px-2 py-1"
+          />
+        </label>
+        <label class="flex items-center justify-between gap-3">
+          Text size (px)
+          <input
+            v-model.number="settings.fontSize"
+            type="number"
+            min="10"
+            max="24"
+            step="1"
             class="w-24 rounded border border-surface-600 bg-surface-900 px-2 py-1"
           />
         </label>
