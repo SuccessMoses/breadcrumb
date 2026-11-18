@@ -167,6 +167,11 @@ const guides = computed(() => {
   return byId;
 });
 
+// The deepest visible row: one faint column per generation down to it
+const maxDepth = computed(() =>
+  visibleRows.value.reduce((deepest, row) => Math.max(deepest, row.depth), 0),
+);
+
 const guideOf = (id: string): Guide =>
   guides.value.get(id) ?? { guides: [], last: true };
 
@@ -555,97 +560,110 @@ const openSequence = (sequence: Sequence) => {
       >
         No sequences match the regex.
       </div>
-      <button
-        v-for="row in visibleRows"
-        :key="row.sequence.id"
-        type="button"
-        class="w-full flex items-center h-7 pl-3 pr-3 text-left text-sm hover:bg-surface-800"
-        :class="
-          row.sequence.id === workspace.state.selectedSequenceId
-            ? 'bg-surface-800 text-surface-100'
-            : 'text-surface-300'
-        "
-        @click="openSequence(row.sequence)"
-        @contextmenu.prevent="openMenu($event, row.sequence)"
-      >
-        <!-- One lane per ancestor depth. The last lane is this row's own elbow,
-             whose stub runs on through the icon column to the text. -->
+      <div class="relative">
+        <!-- Faint columns, one per generation. Each sits at the centre of its lane. -->
         <span
-          v-for="(_lane, lane) in row.depth"
-          :key="lane"
-          class="relative h-full shrink-0"
-          :style="{ width: `${indent}rem` }"
+          v-for="generation in maxDepth"
+          :key="generation"
+          class="pointer-events-none absolute inset-y-0 border-l border-surface-800"
+          :style="{
+            left: `calc(0.75rem + ${(generation - 0.5) * indent}rem)`,
+          }"
+        />
+        <button
+          v-for="row in visibleRows"
+          :key="row.sequence.id"
+          type="button"
+          class="w-full flex items-center h-7 pl-3 pr-3 text-left text-sm hover:bg-surface-800"
+          :class="
+            row.sequence.id === workspace.state.selectedSequenceId
+              ? 'bg-surface-800 text-surface-100'
+              : 'text-surface-300'
+          "
+          @click="openSequence(row.sequence)"
+          @contextmenu.prevent="openMenu($event, row.sequence)"
         >
+          <!-- One lane per ancestor depth. The last lane is this row's own elbow,
+             whose stub runs on through the icon column to the text. -->
           <span
-            v-if="lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]"
-            class="absolute inset-y-0 left-1/2 border-l border-surface-600"
-          />
-          <template v-if="lane === row.depth - 1">
+            v-for="(_lane, lane) in row.depth"
+            :key="lane"
+            class="relative h-full shrink-0"
+            :style="{ width: `${indent}rem` }"
+          >
             <span
-              class="absolute top-0 left-1/2 h-1/2 border-l border-surface-600"
+              v-if="
+                lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]
+              "
+              class="absolute inset-y-0 left-1/2 border-l border-surface-600"
             />
-            <span
-              v-if="!guideOf(row.sequence.id).last"
-              class="absolute top-1/2 bottom-0 left-1/2 border-l border-surface-600"
-            />
-            <span
-              class="absolute top-1/2 left-1/2 border-t border-surface-600"
-              :style="{ width: `calc(${indent / 2}rem + 1rem)` }"
-            />
-          </template>
-        </span>
-        <div class="flex min-w-0 flex-1 items-center gap-2">
-          <span class="flex h-full w-4 shrink-0 items-center justify-center">
-            <span
-              v-if="!filtering && hasChildren(row.sequence.id)"
-              class="cursor-pointer text-surface-500 hover:text-surface-100"
-              :title="isCollapsed(row.sequence.id) ? 'Expand' : 'Collapse'"
-              @click.stop="toggleCollapsed(row.sequence.id)"
-            >
+            <template v-if="lane === row.depth - 1">
+              <span
+                class="absolute top-0 left-1/2 h-1/2 border-l border-surface-600"
+              />
+              <span
+                v-if="!guideOf(row.sequence.id).last"
+                class="absolute top-1/2 bottom-0 left-1/2 border-l border-surface-600"
+              />
+              <span
+                class="absolute top-1/2 left-1/2 border-t border-surface-600"
+                :style="{ width: `calc(${indent / 2}rem + 1rem)` }"
+              />
+            </template>
+          </span>
+          <div class="flex min-w-0 flex-1 items-center gap-2">
+            <span class="flex h-full w-4 shrink-0 items-center justify-center">
+              <span
+                v-if="!filtering && hasChildren(row.sequence.id)"
+                class="cursor-pointer text-surface-500 hover:text-surface-100"
+                :title="isCollapsed(row.sequence.id) ? 'Expand' : 'Collapse'"
+                @click.stop="toggleCollapsed(row.sequence.id)"
+              >
+                <i
+                  class="fas fa-chevron-right text-xs transition-transform"
+                  :class="{ 'rotate-90': !isCollapsed(row.sequence.id) }"
+                />
+              </span>
               <i
-                class="fas fa-chevron-right text-xs transition-transform"
-                :class="{ 'rotate-90': !isCollapsed(row.sequence.id) }"
+                v-else-if="row.depth === 0"
+                class="fas fa-folder text-surface-500"
               />
             </span>
-            <i
-              v-else-if="row.depth === 0"
-              class="fas fa-folder text-surface-500"
-            />
-          </span>
-          <span
-            v-if="workspace.sequenceMethod(row.sequence) !== undefined"
-            class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
-            :style="{
-              backgroundColor: methodColor(
-                workspace.sequenceMethod(row.sequence) ?? '',
-              ),
-            }"
-            >{{ workspace.sequenceMethod(row.sequence) }}</span
-          >
-          <span class="truncate">{{
-            workspace.sequencePath(row.sequence)
-          }}</span>
-          <span
-            v-if="!filtering && isCollapsed(row.sequence.id)"
-            class="text-xs text-surface-500 whitespace-nowrap"
-          >
-            ({{ descendantCounts.get(row.sequence.id) }} hidden)
-          </span>
-          <span class="ml-auto text-xs text-surface-500">
-            {{ row.sequence.steps.length }} steps
-          </span>
-          <span
-            role="checkbox"
-            :aria-checked="selected.has(row.sequence.id)"
-            title="Select for batch actions. Shift-click selects a range."
-            class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-surface-500 text-xs"
-            :class="selected.has(row.sequence.id) ? 'bg-surface-600' : ''"
-            @click.stop="toggleSelected(row.sequence.id, $event)"
-          >
-            <i v-if="selected.has(row.sequence.id)" class="fas fa-check" />
-          </span>
-        </div>
-      </button>
+            <span
+              v-if="workspace.sequenceMethod(row.sequence) !== undefined"
+              class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
+              :style="{
+                backgroundColor: methodColor(
+                  workspace.sequenceMethod(row.sequence) ?? '',
+                ),
+              }"
+              >{{ workspace.sequenceMethod(row.sequence) }}</span
+            >
+            <span class="truncate">{{
+              workspace.sequencePath(row.sequence)
+            }}</span>
+            <span
+              v-if="!filtering && isCollapsed(row.sequence.id)"
+              class="text-xs text-surface-500 whitespace-nowrap"
+            >
+              ({{ descendantCounts.get(row.sequence.id) }} hidden)
+            </span>
+            <span class="ml-auto text-xs text-surface-500">
+              {{ row.sequence.steps.length }} steps
+            </span>
+            <span
+              role="checkbox"
+              :aria-checked="selected.has(row.sequence.id)"
+              title="Select for batch actions. Shift-click selects a range."
+              class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-surface-500 text-xs"
+              :class="selected.has(row.sequence.id) ? 'bg-surface-600' : ''"
+              @click.stop="toggleSelected(row.sequence.id, $event)"
+            >
+              <i v-if="selected.has(row.sequence.id)" class="fas fa-check" />
+            </span>
+          </div>
+        </button>
+      </div>
     </div>
 
     <ContextMenu ref="menu" :model="menuItems" />

@@ -33,7 +33,36 @@ onMounted(async () => {
   openProject(result.kind === "Ok" ? result.value : undefined);
 });
 
-onUnmounted(() => projectListener.stop());
+// Tab moves to the next view on the right, Shift+Tab to the one on the left,
+// unless focus is in a field or the editor, where Tab keeps its usual job
+const TAB_ORDER = ["requests", "sequences", "tree"];
+
+const isTypingTarget = (target: unknown) =>
+  target instanceof HTMLElement &&
+  (target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement);
+
+const onKeyDown = (event: KeyboardEvent) => {
+  if (event.key !== "Tab" || event.altKey || event.ctrlKey || event.metaKey) {
+    return;
+  }
+  if (isTypingTarget(event.target)) return;
+  const index = TAB_ORDER.indexOf(activeTab.value);
+  const next = Math.min(
+    TAB_ORDER.length - 1,
+    Math.max(0, index + (event.shiftKey ? -1 : 1)),
+  );
+  event.preventDefault();
+  activeTab.value = TAB_ORDER[next] ?? activeTab.value;
+};
+
+onMounted(() => window.addEventListener("keydown", onKeyDown));
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKeyDown);
+  projectListener.stop();
+});
 
 // Opening a sequence from the Tree jumps to its view
 const showSequence = () => {
