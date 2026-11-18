@@ -196,8 +196,7 @@ const ancestorsById = computed(() => {
 // batch-selected one, each traced through its ancestors to the root
 const litSources = computed(() => {
   const ids = new Set(selected.value);
-  const id = workspace.state.selectedSequenceId;
-  if (id !== undefined) ids.add(id);
+  if (focusId.value !== undefined) ids.add(focusId.value);
   return [...ids];
 });
 
@@ -262,6 +261,10 @@ const toggleLane = (id: string, lane: number) => {
   const ancestor = (ancestorsById.value.get(id) ?? [])[lane];
   if (ancestor !== undefined) toggleCollapsed(ancestor);
 };
+
+// The row highlighted in this view. Clicking elsewhere clears it; the workspace's
+// selected sequence (what the Sequences tab shows) is left alone
+const focusId = ref<string>();
 
 // Batch selection. Hidden rows are dropped from it, so actions only touch what is shown.
 const selected = ref<Set<string>>(new Set());
@@ -565,6 +568,7 @@ const menuOnBatch = ref(false);
 const openMenu = (event: MouseEvent, sequence: Sequence) => {
   extendTarget.value = sequence;
   menuOnBatch.value = selected.value.has(sequence.id);
+  focusId.value = sequence.id;
   workspace.selectSequence(sequence.id);
   menu.value?.show(event);
 };
@@ -576,18 +580,25 @@ const openSequence = (sequence: Sequence) => {
   emit("openSequence", sequence.id);
 };
 
-// The first click selects and traces the path; a click on the selected row opens it.
-// Shift-click batches the sequence and its children instead.
+// Clicking a sequence's name or method highlights it and its path; clicking it
+// again opens it. Shift-click batches the sequence and its children instead.
 const clickRow = (sequence: Sequence, event: MouseEvent) => {
   if (event.shiftKey) {
     toggleSubtree(sequence.id);
     return;
   }
-  if (sequence.id === workspace.state.selectedSequenceId) {
+  if (sequence.id === focusId.value) {
     openSequence(sequence);
   } else {
+    focusId.value = sequence.id;
     workspace.selectSequence(sequence.id);
   }
+};
+
+// Clicking anywhere else in a row clears the highlight and the batch
+const clearHighlight = () => {
+  focusId.value = undefined;
+  selected.value = new Set();
 };
 </script>
 
@@ -682,7 +693,7 @@ const clickRow = (sequence: Sequence, event: MouseEvent) => {
             ? 'text-amber-200 font-bold'
             : 'text-surface-300 hover:bg-surface-800'
         "
-        @click="clickRow(row.sequence, $event)"
+        @click="clearHighlight"
         @contextmenu.prevent="openMenu($event, row.sequence)"
       >
         <!-- One lane per ancestor depth. The last lane is this row's own elbow,
@@ -761,9 +772,10 @@ const clickRow = (sequence: Sequence, event: MouseEvent) => {
                 workspace.sequenceMethod(row.sequence) ?? '',
               ),
             }"
+            @click.stop="clickRow(row.sequence, $event)"
             >{{ workspace.sequenceMethod(row.sequence) }}</span
           >
-          <span class="truncate">{{
+          <span class="truncate" @click.stop="clickRow(row.sequence, $event)">{{
             workspace.sequencePath(row.sequence)
           }}</span>
           <span
