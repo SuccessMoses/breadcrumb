@@ -256,12 +256,6 @@ const trunkColor = (id: string) => {
     : "border-surface-600";
 };
 
-// Clicking a branch line collapses or expands the sequence it hangs from
-const toggleLane = (id: string, lane: number) => {
-  const ancestor = (ancestorsById.value.get(id) ?? [])[lane];
-  if (ancestor !== undefined) toggleCollapsed(ancestor);
-};
-
 // The row highlighted in this view. Clicking elsewhere clears it; the workspace's
 // selected sequence (what the Sequences tab shows) is left alone
 const focusId = ref<string>();
@@ -587,6 +581,11 @@ const clickRow = (sequence: Sequence, event: MouseEvent) => {
     toggleSubtree(sequence.id);
     return;
   }
+  // Ctrl-click shows or hides everything below the sequence
+  if (event.ctrlKey) {
+    if (hasChildren(sequence.id)) toggleCollapsed(sequence.id);
+    return;
+  }
   if (sequence.id === focusId.value) {
     openSequence(sequence);
   } else {
@@ -736,14 +735,6 @@ const clearHighlight = () => {
               :style="{ width: `calc(${indent / 2}rem + 1rem)` }"
             />
           </template>
-          <span
-            v-if="
-              !filtering &&
-              (lane === row.depth - 1 || guideOf(row.sequence.id).guides[lane])
-            "
-            class="absolute inset-y-0 left-1/2 w-3 -translate-x-1/2 cursor-pointer"
-            @click.stop="toggleLane(row.sequence.id, lane)"
-          />
         </span>
         <div class="flex h-full min-w-0 flex-1 items-center gap-2">
           <span
@@ -753,14 +744,7 @@ const clearHighlight = () => {
             <template v-if="!filtering && hasChildren(row.sequence.id)">
               <span
                 class="absolute top-1/2 bottom-0 left-1/2 border-l"
-                :class="[
-                  trunkColor(row.sequence.id),
-                  isCollapsed(row.sequence.id) ? 'border-dashed' : '',
-                ]"
-              />
-              <span
-                class="absolute inset-y-0 left-1/2 w-3 -translate-x-1/2 cursor-pointer"
-                @click.stop="toggleCollapsed(row.sequence.id)"
+                :class="trunkColor(row.sequence.id)"
               />
             </template>
           </span>
