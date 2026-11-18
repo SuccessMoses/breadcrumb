@@ -745,7 +745,7 @@ const clearHighlight = () => {
             @click.stop="toggleLane(row.sequence.id, lane)"
           />
         </span>
-        <div class="flex min-w-0 flex-1 items-center gap-2">
+        <div class="flex h-full min-w-0 flex-1 items-center gap-2">
           <span
             class="relative flex h-full w-4 shrink-0 items-center justify-center"
           >
