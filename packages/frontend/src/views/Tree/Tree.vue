@@ -162,18 +162,22 @@ const sequenceTitle = (sequence: Sequence) =>
         .map((step, index) => `${index + 1}. ${step.request.split(/\r?\n/)[0]}`)
         .join("\n");
 
-const rerenderTarget = () => {
+const rerenderTarget = async () => {
   const target = extendTarget.value;
   if (target === undefined) return;
   const confirmed = window.confirm(
     `Re-render "${workspace.sequenceLabel(target)}" and every sequence under it from its templates? Manual step edits will be replaced.`,
   );
   if (!confirmed) return;
-  const { sequences, steps } = workspace.rerenderSequence(target.id);
-  sdk.window.showToast(
-    `Rendered ${steps} step(s) in ${sequences} sequence(s)`,
-    { variant: "success" },
+  const { sequences, steps, error } = await workspace.rerenderSequence(
+    target.id,
   );
+  if (error === undefined) {
+    sdk.window.showToast(
+      `Rendered ${steps} step(s) in ${sequences} sequence(s)`,
+      { variant: "success" },
+    );
+  }
 };
 
 const menuItems = computed(() => [
@@ -225,10 +229,12 @@ const filteredTemplates = computed(() => {
     : workspace.state.templates.filter(matches);
 });
 
-const extendWith = (template: RequestTemplate) => {
+const extendWith = async (template: RequestTemplate) => {
   const parent = extendTarget.value;
   if (parent === undefined) return;
-  workspace.extendSequence(parent.id, template.id);
+  // A failed render already showed its error, and the picker stays open
+  const error = await workspace.extendSequence(parent.id, template.id);
+  if (error !== undefined) return;
   const childId = workspace.state.selectedSequenceId;
   if (childId !== undefined) revealSequence(childId);
   pickerVisible.value = false;

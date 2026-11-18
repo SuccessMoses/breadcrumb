@@ -73,19 +73,30 @@ const sendSteps = async (steps: SequenceStep[]) => {
 };
 
 // Same as rerendering from the Tree: the selected sequence and everything under it
-const rerenderSequence = () => {
+const rerenderSequence = async () => {
   const sequence = workspace.selectedSequence.value;
   if (sequence === undefined) return;
   const confirmed = window.confirm(
     `Re-render "${sequence.name}" and every sequence under it from its templates? Manual step edits will be replaced.`,
   );
   if (!confirmed) return;
-  const { sequences, steps } = workspace.rerenderSequence(sequence.id);
-  sdk.window.showToast(
-    `Rendered ${steps} step(s) in ${sequences} sequence(s)`,
-    { variant: "success" },
+  const { sequences, steps, error } = await workspace.rerenderSequence(
+    sequence.id,
   );
+  if (error === undefined) {
+    sdk.window.showToast(
+      `Rendered ${steps} step(s) in ${sequences} sequence(s)`,
+      { variant: "success" },
+    );
+  }
 };
+
+// Values this step's captures produced, shown so a run can be followed
+const capturedText = computed(() =>
+  Object.entries(selectedStep.value?.captured ?? {})
+    .map(([name, value]) => `${name} = ${value}`)
+    .join("   "),
+);
 
 const sendStep = () => {
   const step = selectedStep.value;
@@ -228,6 +239,12 @@ onMounted(() => {
               }}</template
             >
           </span>
+          <span
+            v-if="capturedText !== ''"
+            class="min-w-0 truncate font-mono text-xs text-surface-500"
+            :title="capturedText"
+            >{{ capturedText }}</span
+          >
           <div class="flex gap-2">
             <Button
               label="Rerender"

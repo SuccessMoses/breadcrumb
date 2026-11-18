@@ -8,6 +8,15 @@ import {
   watch,
 } from "vue";
 
+import {
+  type Capture,
+  fillCaptures,
+  NO_RULE,
+  RESPONSE_DIVIDER,
+  runCaptures,
+  type TemplateRule,
+} from "./captures";
+
 import { displayPath } from "@/requests/display";
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
@@ -24,7 +33,19 @@ type WorkspaceState = {
   aliases: Record<string, string>;
   collections: Collection[];
   templateCollection: Record<string, string>;
+  rules: Record<string, TemplateRule>;
 };
+
+// Outcome of rendering one step: its text, its response if it was sent, and
+// the values its captures produced. A failure stops the sequence it is in.
+type RenderResult =
+  | {
+      kind: "ok";
+      request: string;
+      response: string | undefined;
+      captured: Record<string, string>;
+    }
+  | { kind: "error"; message: string };
 
 type SequenceRow = {
   sequence: Sequence;
@@ -45,9 +66,19 @@ export type Workspace = {
   setFocusTemplate: (templateId: string | undefined) => void;
   consumeFocusTemplate: () => string | undefined;
   importTemplates: (templates: RequestTemplate[]) => void;
-  extendSequence: (parentId: string, templateId: string) => void;
+  // Resolves to an error message if rendering stopped, otherwise undefined
+  extendSequence: (
+    parentId: string,
+    templateId: string,
+  ) => Promise<string | undefined>;
   deleteSequence: (id: string) => number;
-  rerenderSequence: (id: string) => { sequences: number; steps: number };
+  rerenderSequence: (id: string) => Promise<{
+    sequences: number;
+    steps: number;
+    error: string | undefined;
+  }>;
+  ruleOf: (templateId: string) => TemplateRule;
+  setRule: (templateId: string, rule: TemplateRule) => void;
   selectSequence: (id: string) => void;
   saveStepRequest: (
     sequenceId: string,
@@ -63,7 +94,6 @@ export type Workspace = {
   createCollection: (name: string) => void;
   moveTemplate: (templateId: string, collectionId: string) => void;
   templateText: (templateId: string) => string | undefined;
-  renderTemplate: (templateId: string) => string | undefined;
   setTemplateText: (templateId: string, text: string) => void;
   resetTemplateText: (templateId: string) => void;
   templateAlias: (template: RequestTemplate) => string;
@@ -73,7 +103,8 @@ export type Workspace = {
   setAlias: (templateId: string, alias: string) => void;
 };
 
-const EMPTY: WorkspaceState = {
+// A fresh object per workspace: shared maps would leak edits between projects
+const emptyState = (): WorkspaceState => ({
   templates: [],
   sequences: [],
   selectedSequenceId: undefined,
@@ -81,7 +112,8 @@ const EMPTY: WorkspaceState = {
   aliases: {},
   collections: [],
   templateCollection: {},
-};
+  rules: {},
+});
 
 const isState = (value: unknown): value is WorkspaceState =>
   typeof value === "object" &&
@@ -128,6 +160,41 @@ const restoreCollections = (value: unknown): Collection[] =>
           : [],
       )
     : [];
+
+const restoreCaptures = (value: unknown): Capture[] =>
+  Array.isArray(value)
+    ? value.flatMap((item): Capture[] =>
+        hasKey(item, "name") &&
+        hasKey(item, "regex") &&
+        typeof item.name === "string" &&
+        typeof item.regex === "string"
+          ? [{ name: item.name, regex: item.regex }]
+          : [],
+      )
+    : [];
+
+const restoreRules = (value: unknown): Record<string, TemplateRule> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+    ? Object.fromEntries(
+        Object.entries(value).flatMap(
+          ([templateId, rule]): [string, TemplateRule][] =>
+            hasKey(rule, "sendOnRender") &&
+            typeof rule.sendOnRender === "boolean"
+              ? [
+                  [
+                    templateId,
+                    {
+                      sendOnRender: rule.sendOnRender,
+                      captures: restoreCaptures(
+                        hasKey(rule, "captures") ? rule.captures : undefined,
+                      ),
+                    },
+                  ],
+                ]
+              : [],
+        ),
+      )
+    : {};
 
 const ROOT_NAME = "/";
 
@@ -195,7 +262,7 @@ export const createWorkspace = (
   // Data saved before projects existed is adopted by the project opened first
   const legacy = !("projects" in root) && isState(root);
   const stored = legacy ? root : readProjects(root)[projectId];
-  const state = reactive<WorkspaceState>({ ...EMPTY });
+  const state = reactive<WorkspaceState>(emptyState());
   const focusStep = ref<string>();
   const setFocusStep = (stepId: string | undefined) => {
     focusStep.value = stepId;
@@ -236,6 +303,9 @@ export const createWorkspace = (
     state.aliases = restoreStrings(
       hasKey(stored, "aliases") ? stored.aliases : undefined,
     );
+    state.rules = restoreRules(
+      hasKey(stored, "rules") ? stored.rules : undefined,
+    );
   }
 
   // Every template starts in the Default collection, which always exists
@@ -252,6 +322,7 @@ export const createWorkspace = (
       collections: state.collections,
       templateCollection: state.templateCollection,
       aliases: state.aliases,
+      rules: state.rules,
     }),
     (snapshot) => {
       const current = readRoot(sdk);
@@ -332,21 +403,68 @@ export const createWorkspace = (
     state.templates = templates;
   };
 
-  const extendSequence = (parentId: string, templateId: string) => {
+  // The values the steps before a step captured. Later steps win on a name.
+  const valuesBefore = (steps: SequenceStep[]) =>
+    steps.reduce<Record<string, string>>(
+      (values, step) => ({ ...values, ...step.captured }),
+      {},
+    );
+
+  // Renders a template as the next step after the given steps: fills {{name}}
+  // from them, sends the request if the template says so, then runs its
+  // captures over the request (and response, if sent).
+  const renderStep = async (
+    templateId: string,
+    before: SequenceStep[],
+  ): Promise<RenderResult> => {
+    const text = templateText(templateId);
+    if (text === undefined)
+      return { kind: "error", message: "Missing template" };
+    const request = fillCaptures(expandTemplate(text), valuesBefore(before));
+    const rule = state.rules[templateId] ?? NO_RULE;
+
+    let response: string | undefined;
+    if (rule.sendOnRender) {
+      const sent = await sdk.backend.sendRaw(request);
+      if (sent.kind === "Error") return { kind: "error", message: sent.error };
+      response = sent.value;
+    }
+
+    const subject =
+      response === undefined ? request : request + RESPONSE_DIVIDER + response;
+    const result = runCaptures(rule.captures, subject);
+    if (result.kind === "error") return result;
+    return { kind: "ok", request, response, captured: result.values };
+  };
+
+  // Rendering stops at the first failure, so later steps never go out with a
+  // value that did not come from a successful step.
+  const extendSequence = async (
+    parentId: string,
+    templateId: string,
+  ): Promise<string | undefined> => {
     const parent = state.sequences.find((s) => s.id === parentId);
     const template = templatesById.value.get(templateId);
-    if (parent === undefined || template === undefined) return;
+    if (parent === undefined || template === undefined) {
+      return "Missing sequence or template";
+    }
 
     const inherited: SequenceStep[] = parent.steps.map((step) => ({
       ...step,
       id: newId(),
       response: undefined,
     }));
+    const rendered = await renderStep(templateId, inherited);
+    if (rendered.kind === "error") {
+      sdk.window.showToast(rendered.message, { variant: "error" });
+      return rendered.message;
+    }
     const step: SequenceStep = {
       id: newId(),
       templateId,
-      request: renderTemplate(templateId) ?? "",
-      response: undefined,
+      request: rendered.request,
+      response: rendered.response,
+      captured: rendered.captured,
     };
     const child: Sequence = {
       id: newId(),
@@ -356,6 +474,7 @@ export const createWorkspace = (
     };
     state.sequences.push(child);
     state.selectedSequenceId = child.id;
+    return undefined;
   };
 
   // Deletes a sequence and everything under it. The root cannot be deleted.
@@ -391,7 +510,9 @@ export const createWorkspace = (
   // from its template, with fresh {random} values. Hand-edited requests are
   // replaced and their responses dropped, since they no longer match. Steps
   // whose template is gone are left alone. Returns what was touched.
-  const rerenderSequence = (id: string) => {
+  // Each sequence is rendered from its own steps, in order, so the values a
+  // step consumes always come from the steps before it in that sequence.
+  const rerenderSequence = async (id: string) => {
     const targets = new Set<string>();
     const collect = (sequenceId: string) => {
       targets.add(sequenceId);
@@ -406,17 +527,31 @@ export const createWorkspace = (
     for (const sequence of state.sequences) {
       if (!targets.has(sequence.id)) continue;
       let changed = false;
-      for (const step of sequence.steps) {
-        const request = renderTemplate(step.templateId);
-        if (request === undefined) continue;
-        step.request = request;
-        step.response = undefined;
+      for (const [index, step] of sequence.steps.entries()) {
+        if (!templatesById.value.has(step.templateId)) continue;
+        const rendered = await renderStep(
+          step.templateId,
+          sequence.steps.slice(0, index),
+        );
+        if (rendered.kind === "error") {
+          sdk.window.showToast(rendered.message, { variant: "error" });
+          return { sequences, steps, error: rendered.message };
+        }
+        step.request = rendered.request;
+        step.response = rendered.response;
+        step.captured = rendered.captured;
         steps += 1;
         changed = true;
       }
       if (changed) sequences += 1;
     }
-    return { sequences, steps };
+    return { sequences, steps, error: undefined };
+  };
+
+  const ruleOf = (templateId: string) => state.rules[templateId] ?? NO_RULE;
+
+  const setRule = (templateId: string, rule: TemplateRule) => {
+    state.rules[templateId] = rule;
   };
 
   const findStep = (sequenceId: string, stepId: string) =>
@@ -466,12 +601,6 @@ export const createWorkspace = (
     const template = templatesById.value.get(templateId);
     if (template === undefined) return undefined;
     return state.texts[templateId] ?? defaultRequest(template);
-  };
-
-  // The template rendered into a concrete request, with fresh {random} values
-  const renderTemplate = (templateId: string) => {
-    const text = templateText(templateId);
-    return text === undefined ? undefined : expandTemplate(text);
   };
 
   const setTemplateText = (templateId: string, text: string) => {
@@ -525,6 +654,8 @@ export const createWorkspace = (
     extendSequence,
     deleteSequence,
     rerenderSequence,
+    ruleOf,
+    setRule,
     selectSequence,
     saveStepRequest,
     saveStepResponse,
@@ -532,7 +663,6 @@ export const createWorkspace = (
     createCollection,
     moveTemplate,
     templateText,
-    renderTemplate,
     setTemplateText,
     resetTemplateText,
     templateAlias,
