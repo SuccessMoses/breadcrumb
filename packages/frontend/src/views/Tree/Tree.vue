@@ -168,6 +168,183 @@ const guides = computed(() => {
 const guideOf = (id: string): Guide =>
   guides.value.get(id) ?? { guides: [], last: true };
 
+// Batch selection. Hidden rows are dropped from it, so actions only touch what is shown.
+const selected = ref<Set<string>>(new Set());
+const anchorId = ref<string>();
+
+const toggleSelected = (id: string, event: MouseEvent) => {
+  const next = new Set(selected.value);
+  if (event.shiftKey && anchorId.value !== undefined) {
+    const ids = visibleRows.value.map((row) => row.sequence.id);
+    const from = ids.indexOf(anchorId.value);
+    const to = ids.indexOf(id);
+    if (from !== -1 && to !== -1) {
+      for (const rowId of ids.slice(
+        Math.min(from, to),
+        Math.max(from, to) + 1,
+      )) {
+        next.add(rowId);
+      }
+    }
+  } else if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  selected.value = next;
+  anchorId.value = id;
+};
+
+watch(visibleRows, (rows) => {
+  const visible = new Set(rows.map((row) => row.sequence.id));
+  if ([...selected.value].every((id) => visible.has(id))) return;
+  selected.value = new Set([...selected.value].filter((id) => visible.has(id)));
+});
+
+// Selected sequences with no selected ancestor: acting on these covers the rest
+const topSelected = computed(() => {
+  const byId = new Map(workspace.state.sequences.map((s) => [s.id, s]));
+  return workspace.state.sequences.filter((sequence) => {
+    if (!selected.value.has(sequence.id)) return false;
+    let parentId = sequence.parentId;
+    while (parentId !== undefined) {
+      if (selected.value.has(parentId)) return false;
+      parentId = byId.get(parentId)?.parentId;
+    }
+    return true;
+  });
+});
+
+const deleteSelected = () => {
+  const targets = topSelected.value.filter((s) => s.parentId !== undefined);
+  if (targets.length === 0) return;
+  const confirmed = window.confirm(
+    `Delete ${targets.length} sequence(s) and everything under them?`,
+  );
+  if (!confirmed) return;
+  let removed = 0;
+  for (const target of targets) removed += workspace.deleteSequence(target.id);
+  selected.value = new Set();
+  sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
+    variant: "success",
+  });
+};
+
+const rerenderSelected = async () => {
+  const targets = topSelected.value;
+  if (targets.length === 0) return;
+  const confirmed = window.confirm(
+    `Re-render ${targets.length} sequence(s) and everything under them from their templates? Manual step edits will be replaced.`,
+  );
+  if (!confirmed) return;
+  let sequences = 0;
+  let steps = 0;
+  for (const target of targets) {
+    const result = await workspace.rerenderSequence(target.id);
+    // The failing render has already shown its error
+    if (result.error !== undefined) return;
+    sequences += result.sequences;
+    steps += result.steps;
+  }
+  sdk.window.showToast(
+    `Rendered ${steps} step(s) in ${sequences} sequence(s)`,
+    {
+      variant: "success",
+    },
+  );
+};
+
+// Grow: generations, the request types taking part, and a preview of the size
+const MAX_GENERATIONS = 5;
+const GROW_LIMIT = 200;
+const growDialog = ref(false);
+const growSources = ref<Sequence[]>([]);
+const growTypes = ref<string[]>([]);
+const growGenerations = ref(1);
+const growReadyOnly = ref(true);
+const growRunning = ref(false);
+const growStopRequested = ref(false);
+
+const growLabel = computed(() => {
+  const only = growSources.value[0];
+  return growSources.value.length === 1 && only !== undefined
+    ? workspace.sequenceLabel(only)
+    : `${growSources.value.length} sequences`;
+});
+
+const generations = computed(() =>
+  Math.min(
+    MAX_GENERATIONS,
+    Math.max(1, Math.floor(growGenerations.value) || 1),
+  ),
+);
+
+const growTemplates = computed(() =>
+  workspace.state.templates.filter((template) =>
+    growTypes.value.includes(template.id),
+  ),
+);
+
+// Generation one is counted exactly; later generations assume every pick is ready
+const growEstimate = computed(() => {
+  const picks = growTemplates.value;
+  if (picks.length === 0) return 0;
+  let level = growSources.value.reduce(
+    (sum, source) =>
+      sum +
+      picks.filter(
+        (template) =>
+          !growReadyOnly.value ||
+          workspace.missingInputs(template.id, source.id).length === 0,
+      ).length,
+    0,
+  );
+  let total = level;
+  for (let generation = 1; generation < generations.value; generation++) {
+    level *= picks.length;
+    total += level;
+  }
+  return total;
+});
+
+const openGrow = (sources: Sequence[]) => {
+  if (sources.length === 0) return;
+  growSources.value = sources;
+  growTypes.value = [];
+  growDialog.value = true;
+};
+
+const toggleGrowType = (templateId: string) => {
+  growTypes.value = growTypes.value.includes(templateId)
+    ? growTypes.value.filter((id) => id !== templateId)
+    : [...growTypes.value, templateId];
+};
+
+const runGrow = async () => {
+  const sources = growSources.value;
+  growRunning.value = true;
+  growStopRequested.value = false;
+  const result = await workspace.grow({
+    sequenceIds: sources.map((source) => source.id),
+    templateIds: growTemplates.value.map((template) => template.id),
+    generations: generations.value,
+    readyOnly: growReadyOnly.value,
+    stopped: () => growStopRequested.value,
+  });
+  growRunning.value = false;
+  // Open the sources so the new children are visible
+  const sourceIds = new Set(sources.map((source) => source.id));
+  collapsed.value = new Set(
+    [...collapsed.value].filter((id) => !sourceIds.has(id)),
+  );
+  const stopped = result.stopped ? " (stopped)" : "";
+  sdk.window.showToast(
+    `Created ${result.created} sequence(s), ${result.pruned} failed${stopped}`,
+    { variant: result.created > 0 ? "success" : "error" },
+  );
+  growDialog.value = false;
+};
+
 const deleteTarget = () => {
   const target = extendTarget.value;
   if (target === undefined) return;
@@ -226,6 +403,12 @@ const menuItems = computed(() => [
       search.value = "";
       picked.value = [];
     },
+  },
+  {
+    label: "Grow…",
+    icon: "fas fa-seedling",
+    command: () =>
+      openGrow(extendTarget.value === undefined ? [] : [extendTarget.value]),
   },
   {
     label: "Rerender",
@@ -377,6 +560,38 @@ const extendPicked = async () => {
       </details>
     </div>
 
+    <div
+      v-if="selected.size > 0"
+      class="flex items-center gap-2 rounded border border-surface-700 px-3 py-2 text-sm"
+    >
+      <span class="text-surface-300">{{ selected.size }} selected</span>
+      <Button
+        label="Grow"
+        icon="fas fa-seedling"
+        size="small"
+        severity="secondary"
+        :disabled="topSelected.length === 0"
+        @click="openGrow(topSelected)"
+      />
+      <Button
+        label="Rerender"
+        icon="fas fa-rotate"
+        size="small"
+        severity="secondary"
+        :disabled="topSelected.length === 0"
+        @click="rerenderSelected"
+      />
+      <Button
+        label="Delete"
+        icon="fas fa-trash"
+        size="small"
+        severity="danger"
+        :disabled="topSelected.every((s) => s.parentId === undefined)"
+        @click="deleteSelected"
+      />
+      <Button label="Clear" size="small" text @click="selected = new Set()" />
+    </div>
+
     <div class="flex-1 min-h-0 overflow-auto">
       <div
         v-if="workspace.rows.value.length === 0"
@@ -470,6 +685,17 @@ const extendPicked = async () => {
           <span class="ml-auto text-xs text-surface-500">
             {{ row.sequence.steps.length }} steps
           </span>
+          <span
+            role="checkbox"
+            :aria-checked="selected.has(row.sequence.id)"
+            title="Select for batch actions. Shift-click selects a range."
+            class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-surface-500 text-xs"
+            :class="selected.has(row.sequence.id) ? 'bg-surface-600' : ''"
+            @click.stop="toggleSelected(row.sequence.id, $event)"
+            @dblclick.stop
+          >
+            <i v-if="selected.has(row.sequence.id)" class="fas fa-check" />
+          </span>
         </div>
       </button>
     </div>
@@ -537,6 +763,84 @@ const extendPicked = async () => {
             :loading="extending"
             :disabled="picked.length === 0"
             @click="extendPicked"
+          />
+        </div>
+      </div>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="growDialog"
+      modal
+      :closable="!growRunning"
+      :header="`Grow ${growLabel}`"
+      :style="{ width: '40rem' }"
+    >
+      <div class="flex flex-col gap-3">
+        <div class="flex items-center gap-4 text-sm text-surface-300">
+          <label class="flex items-center gap-2">
+            Generations
+            <input
+              v-model.number="growGenerations"
+              type="number"
+              min="1"
+              :max="MAX_GENERATIONS"
+              class="w-16 rounded border border-surface-600 bg-surface-900 px-2 py-1"
+            />
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="growReadyOnly" type="checkbox" />
+            Ready only
+          </label>
+        </div>
+        <div class="max-h-80 overflow-auto flex flex-col">
+          <label
+            v-for="template in workspace.state.templates"
+            :key="template.id"
+            class="flex items-center gap-3 px-3 py-1.5 text-sm hover:bg-surface-800"
+          >
+            <input
+              type="checkbox"
+              :checked="growTypes.includes(template.id)"
+              @change="toggleGrowType(template.id)"
+            />
+            <span
+              class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
+              :style="{ backgroundColor: methodColor(template.method) }"
+              >{{ template.method }}</span
+            >
+            <span class="truncate font-mono text-surface-200">{{
+              displayPath(template)
+            }}</span>
+          </label>
+        </div>
+        <div
+          class="flex items-center justify-between gap-2 border-t border-surface-700 pt-3 text-sm"
+        >
+          <span
+            :class="
+              growEstimate > GROW_LIMIT ? 'text-red-400' : 'text-surface-400'
+            "
+          >
+            Up to {{ growEstimate }} sequence(s). Limit {{ GROW_LIMIT }} per
+            run.
+          </span>
+          <Button
+            v-if="growRunning"
+            label="Stop"
+            size="small"
+            severity="secondary"
+            @click="growStopRequested = true"
+          />
+          <Button
+            v-else
+            label="Grow"
+            size="small"
+            :disabled="
+              growTypes.length === 0 ||
+              growEstimate === 0 ||
+              growEstimate > GROW_LIMIT
+            "
+            @click="runGrow"
           />
         </div>
       </div>

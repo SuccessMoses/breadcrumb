@@ -76,6 +76,14 @@ export type Workspace = {
     parentId: string,
     templateId: string,
   ) => Promise<string | undefined>;
+  // Breadth-first growth from each source, with pruning on failure
+  grow: (options: {
+    sequenceIds: string[];
+    templateIds: string[];
+    generations: number;
+    readyOnly: boolean;
+    stopped: () => boolean;
+  }) => Promise<{ created: number; pruned: number; stopped: boolean }>;
   deleteSequence: (id: string) => number;
   rerenderSequence: (id: string) => Promise<{
     sequences: number;
@@ -465,16 +473,19 @@ export const createWorkspace = (
     );
   };
 
+  // Creates one child of a sequence, without selecting it or reporting errors.
   // Rendering stops at the first failure, so later steps never go out with a
   // value that did not come from a successful step.
-  const extendSequence = async (
+  const extendOne = async (
     parentId: string,
     templateId: string,
-  ): Promise<string | undefined> => {
+  ): Promise<
+    { kind: "ok"; id: string } | { kind: "error"; message: string }
+  > => {
     const parent = state.sequences.find((s) => s.id === parentId);
     const template = templatesById.value.get(templateId);
     if (parent === undefined || template === undefined) {
-      return "Missing sequence or template";
+      return { kind: "error", message: "Missing sequence or template" };
     }
 
     // Copies share no objects with the parent, so a change to one never reaches the other
@@ -485,10 +496,7 @@ export const createWorkspace = (
       captured: step.captured === undefined ? undefined : { ...step.captured },
     }));
     const rendered = await renderStep(templateId, inherited);
-    if (rendered.kind === "error") {
-      sdk.window.showToast(rendered.message, { variant: "error" });
-      return rendered.message;
-    }
+    if (rendered.kind === "error") return rendered;
     const step: SequenceStep = {
       id: newId(),
       templateId,
@@ -503,8 +511,62 @@ export const createWorkspace = (
       steps: [...inherited, step],
     };
     state.sequences.push(child);
-    state.selectedSequenceId = child.id;
+    return { kind: "ok", id: child.id };
+  };
+
+  // Extends one sequence and selects the new child. Resolves to an error message
+  // if rendering stopped, otherwise undefined.
+  const extendSequence = async (
+    parentId: string,
+    templateId: string,
+  ): Promise<string | undefined> => {
+    const result = await extendOne(parentId, templateId);
+    if (result.kind === "error") {
+      sdk.window.showToast(result.message, { variant: "error" });
+      return result.message;
+    }
+    state.selectedSequenceId = result.id;
     return undefined;
+  };
+
+  // Breadth-first growth: each generation extends every sequence in the frontier
+  // with each template. A child that fails is pruned, so its branch goes no
+  // further. With readyOnly, a template is skipped where an input is missing.
+  // Stops between requests when stopped() returns true.
+  const grow = async (options: {
+    sequenceIds: string[];
+    templateIds: string[];
+    generations: number;
+    readyOnly: boolean;
+    stopped: () => boolean;
+  }): Promise<{ created: number; pruned: number; stopped: boolean }> => {
+    let frontier = options.sequenceIds;
+    let created = 0;
+    let pruned = 0;
+    for (let generation = 0; generation < options.generations; generation++) {
+      const next: string[] = [];
+      for (const parentId of frontier) {
+        for (const templateId of options.templateIds) {
+          if (options.stopped()) return { created, pruned, stopped: true };
+          if (
+            options.readyOnly &&
+            missingInputs(templateId, parentId).length > 0
+          ) {
+            continue;
+          }
+          const result = await extendOne(parentId, templateId);
+          if (result.kind === "ok") {
+            next.push(result.id);
+            created += 1;
+          } else {
+            pruned += 1;
+          }
+        }
+      }
+      if (next.length === 0) break;
+      frontier = next;
+    }
+    return { created, pruned, stopped: false };
   };
 
   // Deletes a sequence and everything under it. The root cannot be deleted.
@@ -679,6 +741,7 @@ export const createWorkspace = (
     consumeFocusTemplate,
     importTemplates,
     extendSequence,
+    grow,
     deleteSequence,
     rerenderSequence,
     ruleOf,
