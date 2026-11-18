@@ -340,7 +340,9 @@ export const createWorkspace = (
     }),
     (snapshot) => {
       const current = readRoot(sdk);
+      // Keep the other keys (such as settings) that share the storage root
       sdk.storage.set({
+        ...current,
         projects: { ...readProjects(current), [projectId]: snapshot },
       });
     },

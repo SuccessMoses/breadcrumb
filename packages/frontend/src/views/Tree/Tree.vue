@@ -9,6 +9,11 @@ import { computed, ref, watch } from "vue";
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
 import { displayPath, methodColor } from "@/requests/display";
+import {
+  DEFAULT_TREE_SETTINGS,
+  loadTreeSettings,
+  saveTreeSettings,
+} from "@/settings/settings";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
@@ -18,6 +23,20 @@ const sdk = useSDK();
 const menu = ref<InstanceType<typeof ContextMenu>>();
 const extendTarget = ref<Sequence>();
 const pattern = ref("");
+
+// Tree settings are kept per Caido install, not per project
+const settings = ref(loadTreeSettings(sdk));
+const settingsVisible = ref(false);
+watch(settings, (value) => saveTreeSettings(sdk, value), { deep: true });
+const indent = computed(() =>
+  Number.isFinite(settings.value.indent)
+    ? settings.value.indent
+    : DEFAULT_TREE_SETTINGS.indent,
+);
+
+const resetSettings = () => {
+  settings.value = { ...DEFAULT_TREE_SETTINGS };
+};
 
 const compiled = computed(() => {
   const text = pattern.value.trim();
@@ -453,6 +472,14 @@ const openSequence = (sequence: Sequence) => {
         <div class="flex items-center">
           <button
             type="button"
+            title="Tree settings"
+            class="px-1.5 py-1 text-surface-400 hover:text-surface-100"
+            @click="settingsVisible = true"
+          >
+            <i class="fas fa-gear" />
+          </button>
+          <button
+            type="button"
             title="Collapse all"
             class="px-1.5 py-1 text-surface-400 hover:text-surface-100 disabled:opacity-40 disabled:hover:text-surface-400"
             :disabled="filtering || expandableIds.length === 0"
@@ -556,7 +583,8 @@ const openSequence = (sequence: Sequence) => {
         <span
           v-for="(_lane, lane) in row.depth"
           :key="lane"
-          class="relative h-full w-4 shrink-0"
+          class="relative h-full shrink-0"
+          :style="{ width: `${indent}rem` }"
         >
           <span
             v-if="lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]"
@@ -571,7 +599,8 @@ const openSequence = (sequence: Sequence) => {
               class="absolute top-1/2 bottom-0 left-1/2 border-l border-surface-600"
             />
             <span
-              class="absolute top-1/2 left-1/2 w-6 border-t border-surface-600"
+              class="absolute top-1/2 left-1/2 border-t border-surface-600"
+              :style="{ width: `calc(${indent / 2}rem + 1rem)` }"
             />
           </template>
         </span>
@@ -721,6 +750,35 @@ const openSequence = (sequence: Sequence) => {
               growEstimate > GROW_LIMIT
             "
             @click="runGrow"
+          />
+        </div>
+      </div>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="settingsVisible"
+      modal
+      header="Tree settings"
+      :style="{ width: '24rem' }"
+    >
+      <div class="flex flex-col gap-4 text-sm text-surface-300">
+        <label class="flex items-center justify-between gap-3">
+          Indentation per level (rem)
+          <input
+            v-model.number="settings.indent"
+            type="number"
+            min="0.5"
+            max="6"
+            step="0.25"
+            class="w-24 rounded border border-surface-600 bg-surface-900 px-2 py-1"
+          />
+        </label>
+        <div class="flex justify-end">
+          <Button
+            label="Reset to default"
+            size="small"
+            severity="secondary"
+            @click="resetSettings"
           />
         </div>
       </div>
