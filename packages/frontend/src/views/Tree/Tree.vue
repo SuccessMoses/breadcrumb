@@ -682,7 +682,7 @@ const clearHighlight = () => {
         v-for="row in visibleRows"
         :key="row.sequence.id"
         type="button"
-        class="w-full flex items-center pl-3 pr-3 text-left select-none"
+        class="w-full flex items-center pl-3 pr-3 text-left select-none outline-none"
         :style="{
           fontSize: `${fontSize}px`,
           height: `max(1.75rem, ${fontSize * 2}px)`,
