@@ -482,11 +482,20 @@ const openMenu = (event: MouseEvent, sequence: Sequence) => {
   menu.value?.show(event);
 };
 
-// Double-click opens the sequence, landing on the request it is named after
+// Landing on the request a sequence is named after
 const openSequence = (sequence: Sequence) => {
   workspace.selectSequence(sequence.id);
   workspace.setFocusStep(sequence.steps[sequence.steps.length - 1]?.id);
   emit("openSequence", sequence.id);
+};
+
+// The first click selects and traces the path; a click on the selected row opens it
+const clickRow = (sequence: Sequence) => {
+  if (sequence.id === workspace.state.selectedSequenceId) {
+    openSequence(sequence);
+  } else {
+    workspace.selectSequence(sequence.id);
+  }
 };
 </script>
 
@@ -603,14 +612,13 @@ const openSequence = (sequence: Sequence) => {
         v-for="row in visibleRows"
         :key="row.sequence.id"
         type="button"
-        class="w-full flex items-center h-7 pl-3 pr-3 text-left text-sm hover:bg-surface-800"
+        class="w-full flex items-center h-7 pl-3 pr-3 text-left text-sm"
         :class="
           row.sequence.id === workspace.state.selectedSequenceId
             ? 'bg-amber-400/20 text-amber-200 shadow-[inset_3px_0_0_0_#fbbf24]'
-            : 'text-surface-300'
+            : 'text-surface-300 hover:bg-surface-800'
         "
-        @click="workspace.selectSequence(row.sequence.id)"
-        @dblclick="openSequence(row.sequence)"
+        @click="clickRow(row.sequence)"
         @contextmenu.prevent="openMenu($event, row.sequence)"
       >
         <!-- One lane per ancestor depth. The last lane is this row's own elbow,
