@@ -106,64 +106,68 @@ const highlightPlugin = ViewPlugin.fromClass(
   { decorations: (plugin) => plugin.decorations },
 );
 
-const theme = EditorView.theme(
-  {
-    "&": {
-      height: "100%",
-      width: "100%",
-      maxWidth: "100%",
-      backgroundColor: "#1d1f24",
-      color: "#d4d7dd",
-      fontSize: "13px",
-      // Caido's app CSS disables selection on <body>; re-enable it here so text
-      // in read-only panes (responses) can be highlighted and copied.
-      userSelect: "text",
+const themeFor = (autoHeight: boolean) =>
+  EditorView.theme(
+    {
+      "&": {
+        height: autoHeight ? "auto" : "100%",
+        width: "100%",
+        maxWidth: "100%",
+        backgroundColor: "#1d1f24",
+        color: "#d4d7dd",
+        fontSize: "13px",
+        // Caido's app CSS disables selection on <body>; re-enable it here so text
+        // in read-only panes (responses) can be highlighted and copied.
+        userSelect: "text",
+      },
+      ".cm-scroller": {
+        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+        lineHeight: "1.5",
+      },
+      ".cm-content": { caretColor: "#f0a048", padding: "8px 0" },
+      ".cm-gutters": {
+        backgroundColor: "#1d1f24",
+        color: "#5c616b",
+        border: "none",
+      },
+      ".cm-activeLine": { backgroundColor: "#262930" },
+      ".cm-activeLineGutter": { backgroundColor: "#262930" },
+      "&.cm-focused": { outline: "none" },
+      ".cm-cursor": { borderLeftColor: "#f0a048" },
+      ".cm-http-method": { color: "#f0a048", fontWeight: "600" },
+      ".cm-http-target": { color: "#e6e8ec" },
+      ".cm-http-version": { color: "#6b7079" },
+      ".cm-http-header-name": { color: "#7aa2f7" },
+      ".cm-http-header-value": { color: "#a9b0bc" },
+      ".cm-http-key": { color: "#7aa2f7" },
+      ".cm-http-string": { color: "#98c379" },
+      ".cm-http-number": { color: "#d19a66" },
+      ".cm-http-atom": { color: "#c678dd" },
+      ".cm-http-placeholder": {
+        color: "#e5c07b",
+        backgroundColor: "rgba(229, 192, 123, 0.12)",
+        borderRadius: "2px",
+      },
     },
-    ".cm-scroller": {
-      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
-      lineHeight: "1.5",
-    },
-    ".cm-content": { caretColor: "#f0a048", padding: "8px 0" },
-    ".cm-gutters": {
-      backgroundColor: "#1d1f24",
-      color: "#5c616b",
-      border: "none",
-    },
-    ".cm-activeLine": { backgroundColor: "#262930" },
-    ".cm-activeLineGutter": { backgroundColor: "#262930" },
-    "&.cm-focused": { outline: "none" },
-    ".cm-cursor": { borderLeftColor: "#f0a048" },
-    ".cm-http-method": { color: "#f0a048", fontWeight: "600" },
-    ".cm-http-target": { color: "#e6e8ec" },
-    ".cm-http-version": { color: "#6b7079" },
-    ".cm-http-header-name": { color: "#7aa2f7" },
-    ".cm-http-header-value": { color: "#a9b0bc" },
-    ".cm-http-key": { color: "#7aa2f7" },
-    ".cm-http-string": { color: "#98c379" },
-    ".cm-http-number": { color: "#d19a66" },
-    ".cm-http-atom": { color: "#c678dd" },
-    ".cm-http-placeholder": {
-      color: "#e5c07b",
-      backgroundColor: "rgba(229, 192, 123, 0.12)",
-      borderRadius: "2px",
-    },
-  },
-  { dark: true },
-);
+    { dark: true },
+  );
 
 export type HttpEditor = {
   setText: (text: string) => void;
   getText: () => string;
+  destroy: () => void;
 };
 
+// autoHeight sizes the editor to its text instead of filling its parent
 export const createHttpEditor = (
   parent: HTMLElement,
   readOnly: boolean,
+  autoHeight = false,
 ): HttpEditor => {
   const view = new EditorView({
     parent,
     extensions: [
-      theme,
+      themeFor(autoHeight),
       highlightPlugin,
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false" }),
@@ -178,5 +182,6 @@ export const createHttpEditor = (
       });
     },
     getText: () => view.state.doc.toString(),
+    destroy: () => view.destroy(),
   };
 };
