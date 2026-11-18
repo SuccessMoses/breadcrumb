@@ -202,19 +202,41 @@ const onPath = computed(() => {
 
 // For each traced ancestor, the row of its child on the path: its branch line is
 // gold down to that row and no further
-const pathEndById = computed(() => {
+// Everything whose branch lines light up: the selected sequence and every
+// batch-selected one, each traced through its ancestors to the root
+const litSources = computed(() => {
+  const ids = new Set(selected.value);
   const id = workspace.state.selectedSequenceId;
+  if (id !== undefined) ids.add(id);
+  return [...ids];
+});
+
+const litChain = (id: string) => [...(ancestorsById.value.get(id) ?? []), id];
+
+// Lit rows: the sources and their ancestors
+const litIds = computed(() => {
+  const ids = new Set<string>();
+  for (const source of litSources.value) {
+    for (const id of litChain(source)) ids.add(id);
+  }
+  return ids;
+});
+
+// For each lit parent, the row of its lit child furthest down: its branch line is
+// gold down to that row and no further
+const pathEndById = computed(() => {
   const rows = new Map(
     visibleRows.value.map((row, index) => [row.sequence.id, index]),
   );
   const ends = new Map<string, number>();
-  if (id === undefined) return ends;
-  const chain = [...(ancestorsById.value.get(id) ?? []), id];
-  for (let k = 0; k < chain.length - 1; k++) {
-    const parent = chain[k];
-    const child = chain[k + 1];
-    const end = child === undefined ? undefined : rows.get(child);
-    if (parent !== undefined && end !== undefined) ends.set(parent, end);
+  for (const source of litSources.value) {
+    const chain = litChain(source);
+    for (let k = 0; k < chain.length - 1; k++) {
+      const parent = chain[k];
+      const end = rows.get(chain[k + 1] ?? "");
+      if (parent === undefined || end === undefined) continue;
+      ends.set(parent, Math.max(ends.get(parent) ?? -1, end));
+    }
   }
   return ends;
 });
@@ -496,31 +518,63 @@ const rerenderTarget = async () => {
   }
 };
 
-const menuItems = computed(() => [
-  {
-    label: "Extend",
-    icon: "fas fa-plus",
-    command: () =>
-      openGrow(extendTarget.value === undefined ? [] : [extendTarget.value]),
-  },
-  {
-    label: "Rerender",
-    icon: "fas fa-rotate",
-    disabled:
-      extendTarget.value === undefined ||
-      subtreeStepCount(extendTarget.value.id) === 0,
-    command: rerenderTarget,
-  },
-  {
-    label: "Delete",
-    icon: "fas fa-trash",
-    disabled: extendTarget.value?.parentId === undefined,
-    command: deleteTarget,
-  },
-]);
+const menuItems = computed(() => {
+  if (menuOnBatch.value) {
+    return [
+      {
+        label: `Extend ${selected.value.size} selected`,
+        icon: "fas fa-plus",
+        command: () => openGrow(topSelected.value),
+      },
+      {
+        label: "Rerender",
+        icon: "fas fa-rotate",
+        disabled: topSelected.value.length === 0,
+        command: rerenderSelected,
+      },
+      {
+        label: "Delete",
+        icon: "fas fa-trash",
+        disabled: topSelected.value.every((s) => s.parentId === undefined),
+        command: deleteSelected,
+      },
+      {
+        label: "Clear selection",
+        icon: "fas fa-xmark",
+        command: () => (selected.value = new Set()),
+      },
+    ];
+  }
+  return [
+    {
+      label: "Extend",
+      icon: "fas fa-plus",
+      command: () =>
+        openGrow(extendTarget.value === undefined ? [] : [extendTarget.value]),
+    },
+    {
+      label: "Rerender",
+      icon: "fas fa-rotate",
+      disabled:
+        extendTarget.value === undefined ||
+        subtreeStepCount(extendTarget.value.id) === 0,
+      command: rerenderTarget,
+    },
+    {
+      label: "Delete",
+      icon: "fas fa-trash",
+      disabled: extendTarget.value?.parentId === undefined,
+      command: deleteTarget,
+    },
+  ];
+});
+
+// Right-clicking a batch-selected row acts on the whole batch
+const menuOnBatch = ref(false);
 
 const openMenu = (event: MouseEvent, sequence: Sequence) => {
   extendTarget.value = sequence;
+  menuOnBatch.value = selected.value.has(sequence.id);
   workspace.selectSequence(sequence.id);
   menu.value?.show(event);
 };
@@ -610,38 +664,6 @@ const clickRow = (sequence: Sequence, event: MouseEvent) => {
       </details>
     </div>
 
-    <div
-      v-if="selected.size > 0"
-      class="flex items-center gap-2 rounded border border-surface-700 px-3 py-2 text-sm"
-    >
-      <span class="text-surface-300">{{ selected.size }} selected</span>
-      <Button
-        label="Extend"
-        icon="fas fa-plus"
-        size="small"
-        severity="secondary"
-        :disabled="topSelected.length === 0"
-        @click="openGrow(topSelected)"
-      />
-      <Button
-        label="Rerender"
-        icon="fas fa-rotate"
-        size="small"
-        severity="secondary"
-        :disabled="topSelected.length === 0"
-        @click="rerenderSelected"
-      />
-      <Button
-        label="Delete"
-        icon="fas fa-trash"
-        size="small"
-        severity="danger"
-        :disabled="topSelected.every((s) => s.parentId === undefined)"
-        @click="deleteSelected"
-      />
-      <Button label="Clear" size="small" text @click="selected = new Set()" />
-    </div>
-
     <div class="flex-1 min-h-0 overflow-auto">
       <div
         v-if="workspace.rows.value.length === 0"
@@ -708,7 +730,7 @@ const clickRow = (sequence: Sequence, event: MouseEvent) => {
             <span
               class="absolute top-1/2 left-1/2 border-t"
               :class="
-                onPath.has(row.sequence.id)
+                litIds.has(row.sequence.id)
                   ? 'border-amber-400'
                   : 'border-surface-600'
               "
