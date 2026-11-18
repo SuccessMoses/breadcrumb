@@ -12,6 +12,7 @@ import {
   type Capture,
   fillCaptures,
   NO_RULE,
+  placeholderNames,
   RESPONSE_DIVIDER,
   runCaptures,
   type TemplateRule,
@@ -82,6 +83,8 @@ export type Workspace = {
     error: string | undefined;
   }>;
   ruleOf: (templateId: string) => TemplateRule;
+  // The {{name}} inputs of a template that no step of the sequence captured
+  missingInputs: (templateId: string, sequenceId: string) => string[];
   setRule: (templateId: string, rule: TemplateRule) => void;
   selectSequence: (id: string) => void;
   saveStepRequest: (
@@ -452,6 +455,16 @@ export const createWorkspace = (
     return { kind: "ok", request, response, captured: result.values };
   };
 
+  const missingInputs = (templateId: string, sequenceId: string) => {
+    const text = templateText(templateId);
+    const sequence = state.sequences.find((s) => s.id === sequenceId);
+    if (text === undefined || sequence === undefined) return [];
+    const available = valuesBefore(sequence.steps);
+    return placeholderNames(text).filter(
+      (name) => !Object.hasOwn(available, name),
+    );
+  };
+
   // Rendering stops at the first failure, so later steps never go out with a
   // value that did not come from a successful step.
   const extendSequence = async (
@@ -668,6 +681,7 @@ export const createWorkspace = (
     rerenderSequence,
     ruleOf,
     setRule,
+    missingInputs,
     selectSequence,
     saveStepRequest,
     saveStepResponse,

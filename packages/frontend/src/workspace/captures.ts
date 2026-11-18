@@ -26,6 +26,11 @@ export const fillCaptures = (
     Object.hasOwn(values, name) ? (values[name] ?? "") : whole,
   );
 
+// The distinct names a template reads with {{name}}
+export const placeholderNames = (text: string): string[] => [
+  ...new Set([...text.matchAll(PLACEHOLDER)].map((match) => match[1] ?? "")),
+];
+
 // The last capture group of the first match. No groups means the whole match,
 // and no match means an empty value.
 const captured = (match: RegExpExecArray | undefined): string => {

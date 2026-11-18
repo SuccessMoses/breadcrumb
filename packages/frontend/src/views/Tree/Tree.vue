@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import type { RequestTemplate, Sequence } from "shared";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
@@ -18,6 +19,9 @@ const menu = ref<InstanceType<typeof ContextMenu>>();
 const extendTarget = ref<Sequence>();
 const pickerVisible = ref(false);
 const search = ref("");
+const picked = ref<string[]>([]);
+const readyOnly = ref(false);
+const extending = ref(false);
 const pattern = ref("");
 
 const compiled = computed(() => {
@@ -187,6 +191,7 @@ const menuItems = computed(() => [
     command: () => {
       pickerVisible.value = true;
       search.value = "";
+      picked.value = [];
     },
   },
   {
@@ -218,25 +223,68 @@ const openSequence = (sequence: Sequence) => {
   emit("openSequence", sequence.id);
 };
 
+// The {{name}} inputs a template needs that the target sequence has not captured
+const missingFor = (template: RequestTemplate) =>
+  extendTarget.value === undefined
+    ? []
+    : workspace.missingInputs(template.id, extendTarget.value.id);
+
+const isReady = (template: RequestTemplate) =>
+  missingFor(template).length === 0;
+
 const filteredTemplates = computed(() => {
   const query = search.value.trim().toLowerCase();
   const matches = (template: RequestTemplate) =>
+    query === "" ||
     [template.method, template.url, workspace.templateAlias(template)].some(
       (field) => field.toLowerCase().includes(query),
     );
-  return query === ""
-    ? workspace.state.templates
-    : workspace.state.templates.filter(matches);
+  return workspace.state.templates.filter(
+    (template) => matches(template) && (!readyOnly.value || isReady(template)),
+  );
 });
 
-const extendWith = async (template: RequestTemplate) => {
+const togglePick = (templateId: string) => {
+  picked.value = picked.value.includes(templateId)
+    ? picked.value.filter((id) => id !== templateId)
+    : [...picked.value, templateId];
+};
+
+// A pick that is no longer ready cannot stay picked once the filter hides it
+watch(readyOnly, (on) => {
+  if (!on) return;
+  picked.value = picked.value.filter((id) => {
+    const template = workspace.templatesById.value.get(id);
+    return template !== undefined && isReady(template);
+  });
+});
+
+// One child per picked template, each rendered from the same parent. A failed
+// child shows its error and the others still run.
+const extendPicked = async () => {
   const parent = extendTarget.value;
   if (parent === undefined) return;
-  // A failed render already showed its error, and the picker stays open
-  const error = await workspace.extendSequence(parent.id, template.id);
-  if (error !== undefined) return;
-  const childId = workspace.state.selectedSequenceId;
-  if (childId !== undefined) revealSequence(childId);
+  const templates = workspace.state.templates.filter((template) =>
+    picked.value.includes(template.id),
+  );
+  extending.value = true;
+  let created = 0;
+  for (const template of templates) {
+    const error = await workspace.extendSequence(parent.id, template.id);
+    if (error === undefined) created += 1;
+  }
+  extending.value = false;
+  if (created > 0) {
+    const childId = workspace.state.selectedSequenceId;
+    if (childId !== undefined) revealSequence(childId);
+  }
+  sdk.window.showToast(
+    `Created ${created} of ${templates.length} sequence(s)`,
+    {
+      variant: created === templates.length ? "success" : "error",
+    },
+  );
+  picked.value = [];
   pickerVisible.value = false;
 };
 </script>
@@ -394,8 +442,14 @@ const extendWith = async (template: RequestTemplate) => {
             :key="template.id"
             type="button"
             class="flex items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
-            @click="extendWith(template)"
+            :class="picked.includes(template.id) ? 'bg-surface-800' : ''"
+            @click="togglePick(template.id)"
           >
+            <span
+              class="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-surface-500 text-xs"
+            >
+              <i v-if="picked.includes(template.id)" class="fas fa-check" />
+            </span>
             <span
               class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
               :style="{ backgroundColor: methodColor(template.method) }"
@@ -404,7 +458,27 @@ const extendWith = async (template: RequestTemplate) => {
             <span class="truncate font-mono text-surface-200">{{
               displayPath(template)
             }}</span>
+            <span
+              v-if="missingFor(template).length > 0"
+              class="ml-auto shrink-0 text-xs text-amber-400"
+              >needs {{ missingFor(template).join(", ") }}</span
+            >
           </button>
+        </div>
+        <div
+          class="flex items-center justify-between gap-2 border-t border-surface-700 pt-3"
+        >
+          <label class="flex items-center gap-2 text-sm text-surface-300">
+            <input v-model="readyOnly" type="checkbox" />
+            Ready only
+          </label>
+          <Button
+            :label="`Extend ${picked.length}`"
+            size="small"
+            :loading="extending"
+            :disabled="picked.length === 0"
+            @click="extendPicked"
+          />
         </div>
       </div>
     </Dialog>
