@@ -477,10 +477,12 @@ export const createWorkspace = (
       return "Missing sequence or template";
     }
 
+    // Copies share no objects with the parent, so a change to one never reaches the other
     const inherited: SequenceStep[] = parent.steps.map((step) => ({
       ...step,
       id: newId(),
       response: undefined,
+      captured: step.captured === undefined ? undefined : { ...step.captured },
     }));
     const rendered = await renderStep(templateId, inherited);
     if (rendered.kind === "error") {
