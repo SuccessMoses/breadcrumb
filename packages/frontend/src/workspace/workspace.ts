@@ -104,7 +104,6 @@ export type Workspace = {
   sequenceLabel: (sequence: Sequence) => string;
   sequenceMethod: (sequence: Sequence) => string | undefined;
   sequencePath: (sequence: Sequence) => string;
-  setAlias: (templateId: string, alias: string) => void;
 };
 
 // A fresh object per workspace: shared maps would leak edits between projects
@@ -651,10 +650,6 @@ export const createWorkspace = (
       : `${method} ${sequencePath(sequence)}`;
   };
 
-  const setAlias = (templateId: string, alias: string) => {
-    state.aliases[templateId] = alias;
-  };
-
   return {
     state,
     templatesById,
@@ -686,6 +681,5 @@ export const createWorkspace = (
     sequenceLabel,
     sequenceMethod,
     sequencePath,
-    setAlias,
   };
 };

@@ -3,7 +3,6 @@ import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
 import ContextMenu from "primevue/contextmenu";
 import InputText from "primevue/inputtext";
-import Select from "primevue/select";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
 import type { RequestTemplate } from "shared";
@@ -133,17 +132,6 @@ const addCollection = () => {
   newCollectionName.value = "";
 };
 
-const selectedCollectionId = computed(() =>
-  selectedTemplate.value === undefined
-    ? undefined
-    : workspace.collectionOf(selectedTemplate.value.id),
-);
-
-const moveSelected = (collectionId: string) => {
-  const id = selectedTemplateId.value;
-  if (id !== undefined) workspace.moveTemplate(id, collectionId);
-};
-
 const renderPattern = ref("");
 const renderMatch = computed(() => {
   const text = renderPattern.value.trim();
@@ -227,18 +215,6 @@ const renderLabel = computed(() =>
     ? `Render & send (${renderTargets.value.length})`
     : `Render on top (${renderTargets.value.length})`,
 );
-
-const aliasValue = computed(() =>
-  selectedTemplate.value === undefined
-    ? ""
-    : workspace.templateAlias(selectedTemplate.value),
-);
-
-const onAliasInput = (event: Event) => {
-  const id = selectedTemplateId.value;
-  if (id === undefined) return;
-  workspace.setAlias(id, (event.target as HTMLInputElement).value);
-};
 
 const toLf = (text: string) => text.replace(/\r\n/g, "\n");
 const toCrlf = (text: string) => text.replace(/\r?\n/g, "\r\n");
@@ -449,26 +425,6 @@ onMounted(() => {
               class="whitespace-nowrap rounded border border-surface-600 px-1.5 text-xs text-surface-300"
               >Rendered ×{{ selectedRenderCount }}</span
             >
-          </div>
-          <div class="flex items-center gap-2">
-            <Select
-              :model-value="selectedCollectionId"
-              :options="workspace.state.collections"
-              option-label="name"
-              option-value="id"
-              size="small"
-              class="w-44"
-              :disabled="selectedTemplate === undefined"
-              @update:model-value="moveSelected"
-            />
-            <InputText
-              :model-value="aliasValue"
-              :disabled="selectedTemplate === undefined"
-              placeholder="Alias"
-              size="small"
-              class="w-56"
-              @input="onAliasInput"
-            />
           </div>
         </div>
 
