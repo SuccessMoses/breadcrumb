@@ -17,11 +17,6 @@ const sdk = useSDK();
 
 const menu = ref<InstanceType<typeof ContextMenu>>();
 const extendTarget = ref<Sequence>();
-const pickerVisible = ref(false);
-const search = ref("");
-const picked = ref<string[]>([]);
-const readyOnly = ref(false);
-const extending = ref(false);
 const pattern = ref("");
 
 const compiled = computed(() => {
@@ -92,18 +87,6 @@ const collapseAll = () => {
 
 const expandAll = () => {
   collapsed.value = new Set();
-};
-
-// Expands every ancestor of a sequence, so a freshly created child is visible.
-const revealSequence = (id: string) => {
-  const byId = new Map(workspace.state.sequences.map((s) => [s.id, s]));
-  const next = new Set(collapsed.value);
-  let parentId = byId.get(id)?.parentId;
-  while (parentId !== undefined) {
-    next.delete(parentId);
-    parentId = byId.get(parentId)?.parentId;
-  }
-  collapsed.value = next;
 };
 
 const matchingRows = computed(() => {
@@ -254,14 +237,15 @@ const rerenderSelected = async () => {
   );
 };
 
-// Grow: generations, the request types taking part, and a preview of the size
+// Extend and Grow are one dialog: with one generation it extends each source once
 const MAX_GENERATIONS = 5;
 const GROW_LIMIT = 200;
 const growDialog = ref(false);
 const growSources = ref<Sequence[]>([]);
 const growTypes = ref<string[]>([]);
+const growSearch = ref("");
 const growGenerations = ref(1);
-const growReadyOnly = ref(true);
+const growReadyOnly = ref(false);
 const growRunning = ref(false);
 const growStopRequested = ref(false);
 
@@ -284,6 +268,25 @@ const growTemplates = computed(() =>
     growTypes.value.includes(template.id),
   ),
 );
+
+const growCandidates = computed(() => {
+  const query = growSearch.value.trim().toLowerCase();
+  return workspace.state.templates.filter(
+    (template) =>
+      query === "" ||
+      [template.method, template.url, workspace.templateAlias(template)].some(
+        (field) => field.toLowerCase().includes(query),
+      ),
+  );
+});
+
+// With a single source, the {{name}} inputs a template still lacks there
+const needsFor = (template: RequestTemplate) => {
+  const only = growSources.value[0];
+  return growSources.value.length === 1 && only !== undefined
+    ? workspace.missingInputs(template.id, only.id)
+    : [];
+};
 
 // Generation one is counted exactly; later generations assume every pick is ready
 const growEstimate = computed(() => {
@@ -311,6 +314,8 @@ const openGrow = (sources: Sequence[]) => {
   if (sources.length === 0) return;
   growSources.value = sources;
   growTypes.value = [];
+  growSearch.value = "";
+  growGenerations.value = 1;
   growDialog.value = true;
 };
 
@@ -398,15 +403,6 @@ const menuItems = computed(() => [
   {
     label: "Extend",
     icon: "fas fa-plus",
-    command: () => {
-      pickerVisible.value = true;
-      search.value = "";
-      picked.value = [];
-    },
-  },
-  {
-    label: "Grow…",
-    icon: "fas fa-seedling",
     command: () =>
       openGrow(extendTarget.value === undefined ? [] : [extendTarget.value]),
   },
@@ -432,76 +428,11 @@ const openMenu = (event: MouseEvent, sequence: Sequence) => {
   menu.value?.show(event);
 };
 
-// Double-click opens the sequence, landing on the request it is named after
+// Click opens the sequence, landing on the request it is named after
 const openSequence = (sequence: Sequence) => {
   workspace.selectSequence(sequence.id);
   workspace.setFocusStep(sequence.steps[sequence.steps.length - 1]?.id);
   emit("openSequence", sequence.id);
-};
-
-// The {{name}} inputs a template needs that the target sequence has not captured
-const missingFor = (template: RequestTemplate) =>
-  extendTarget.value === undefined
-    ? []
-    : workspace.missingInputs(template.id, extendTarget.value.id);
-
-const isReady = (template: RequestTemplate) =>
-  missingFor(template).length === 0;
-
-const filteredTemplates = computed(() => {
-  const query = search.value.trim().toLowerCase();
-  const matches = (template: RequestTemplate) =>
-    query === "" ||
-    [template.method, template.url, workspace.templateAlias(template)].some(
-      (field) => field.toLowerCase().includes(query),
-    );
-  return workspace.state.templates.filter(
-    (template) => matches(template) && (!readyOnly.value || isReady(template)),
-  );
-});
-
-const togglePick = (templateId: string) => {
-  picked.value = picked.value.includes(templateId)
-    ? picked.value.filter((id) => id !== templateId)
-    : [...picked.value, templateId];
-};
-
-// A pick that is no longer ready cannot stay picked once the filter hides it
-watch(readyOnly, (on) => {
-  if (!on) return;
-  picked.value = picked.value.filter((id) => {
-    const template = workspace.templatesById.value.get(id);
-    return template !== undefined && isReady(template);
-  });
-});
-
-// One child per picked template, each rendered from the same parent. A failed
-// child shows its error and the others still run.
-const extendPicked = async () => {
-  const parent = extendTarget.value;
-  if (parent === undefined) return;
-  const templates = workspace.state.templates.filter((template) =>
-    picked.value.includes(template.id),
-  );
-  extending.value = true;
-  let created = 0;
-  for (const template of templates) {
-    const error = await workspace.extendSequence(parent.id, template.id);
-    if (error === undefined) created += 1;
-  }
-  extending.value = false;
-  if (created > 0) {
-    const childId = workspace.state.selectedSequenceId;
-    if (childId !== undefined) revealSequence(childId);
-  }
-  sdk.window.showToast(
-    `Created ${created} of ${templates.length} sequence(s)`,
-    {
-      variant: created === templates.length ? "success" : "error",
-    },
-  );
-  picked.value = [];
-  pickerVisible.value = false;
 };
 </script>
 
@@ -566,8 +497,8 @@ const extendPicked = async () => {
     >
       <span class="text-surface-300">{{ selected.size }} selected</span>
       <Button
-        label="Grow"
-        icon="fas fa-seedling"
+        label="Extend"
+        icon="fas fa-plus"
         size="small"
         severity="secondary"
         :disabled="topSelected.length === 0"
@@ -617,15 +548,15 @@ const extendPicked = async () => {
             ? 'bg-surface-800 text-surface-100'
             : 'text-surface-300'
         "
-        @click="workspace.selectSequence(row.sequence.id)"
-        @dblclick="openSequence(row.sequence)"
+        @click="openSequence(row.sequence)"
         @contextmenu.prevent="openMenu($event, row.sequence)"
       >
-        <!-- One lane per ancestor depth. The last lane is this row's own elbow. -->
+        <!-- One lane per ancestor depth. The last lane is this row's own elbow,
+             whose stub runs on through the icon column to the text. -->
         <span
           v-for="(_lane, lane) in row.depth"
           :key="lane"
-          class="relative h-full w-5 shrink-0"
+          class="relative h-full w-4 shrink-0"
         >
           <span
             v-if="lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]"
@@ -640,18 +571,17 @@ const extendPicked = async () => {
               class="absolute top-1/2 bottom-0 left-1/2 border-l border-surface-600"
             />
             <span
-              class="absolute top-1/2 right-0 left-1/2 border-t border-surface-600"
+              class="absolute top-1/2 left-1/2 w-6 border-t border-surface-600"
             />
           </template>
         </span>
         <div class="flex min-w-0 flex-1 items-center gap-2">
-          <span class="flex h-full w-5 shrink-0 items-center justify-center">
+          <span class="flex h-full w-4 shrink-0 items-center justify-center">
             <span
               v-if="!filtering && hasChildren(row.sequence.id)"
               class="cursor-pointer text-surface-500 hover:text-surface-100"
               :title="isCollapsed(row.sequence.id) ? 'Expand' : 'Collapse'"
               @click.stop="toggleCollapsed(row.sequence.id)"
-              @dblclick.stop
             >
               <i
                 class="fas fa-chevron-right text-xs transition-transform"
@@ -692,7 +622,6 @@ const extendPicked = async () => {
             class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-surface-500 text-xs"
             :class="selected.has(row.sequence.id) ? 'bg-surface-600' : ''"
             @click.stop="toggleSelected(row.sequence.id, $event)"
-            @dblclick.stop
           >
             <i v-if="selected.has(row.sequence.id)" class="fas fa-check" />
           </span>
@@ -703,76 +632,10 @@ const extendPicked = async () => {
     <ContextMenu ref="menu" :model="menuItems" />
 
     <Dialog
-      v-model:visible="pickerVisible"
-      modal
-      :header="`Extend ${extendTarget === undefined ? '' : workspace.sequenceLabel(extendTarget)}`"
-      :style="{ width: '40rem' }"
-    >
-      <div class="flex flex-col gap-2">
-        <InputText
-          v-model="search"
-          placeholder="Search method, URL, or alias"
-          size="small"
-          autofocus
-        />
-        <div class="max-h-96 overflow-auto flex flex-col">
-          <div
-            v-if="filteredTemplates.length === 0"
-            class="py-6 text-center text-surface-400"
-          >
-            No request templates match
-          </div>
-          <button
-            v-for="template in filteredTemplates"
-            :key="template.id"
-            type="button"
-            class="flex items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
-            :class="picked.includes(template.id) ? 'bg-surface-800' : ''"
-            @click="togglePick(template.id)"
-          >
-            <span
-              class="flex h-4 w-4 shrink-0 items-center justify-center rounded border border-surface-500 text-xs"
-            >
-              <i v-if="picked.includes(template.id)" class="fas fa-check" />
-            </span>
-            <span
-              class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
-              :style="{ backgroundColor: methodColor(template.method) }"
-              >{{ template.method }}</span
-            >
-            <span class="truncate font-mono text-surface-200">{{
-              displayPath(template)
-            }}</span>
-            <span
-              v-if="missingFor(template).length > 0"
-              class="ml-auto shrink-0 text-xs text-amber-400"
-              >needs {{ missingFor(template).join(", ") }}</span
-            >
-          </button>
-        </div>
-        <div
-          class="flex items-center justify-between gap-2 border-t border-surface-700 pt-3"
-        >
-          <label class="flex items-center gap-2 text-sm text-surface-300">
-            <input v-model="readyOnly" type="checkbox" />
-            Ready only
-          </label>
-          <Button
-            :label="`Extend ${picked.length}`"
-            size="small"
-            :loading="extending"
-            :disabled="picked.length === 0"
-            @click="extendPicked"
-          />
-        </div>
-      </div>
-    </Dialog>
-
-    <Dialog
       v-model:visible="growDialog"
       modal
       :closable="!growRunning"
-      :header="`Grow ${growLabel}`"
+      :header="`${growSources.length === 1 ? 'Extend' : 'Grow'} ${growLabel}`"
       :style="{ width: '40rem' }"
     >
       <div class="flex flex-col gap-3">
@@ -792,9 +655,21 @@ const extendPicked = async () => {
             Ready only
           </label>
         </div>
+        <InputText
+          v-model="growSearch"
+          placeholder="Search method, URL, or alias"
+          size="small"
+          autofocus
+        />
         <div class="max-h-80 overflow-auto flex flex-col">
+          <div
+            v-if="growCandidates.length === 0"
+            class="py-6 text-center text-surface-400"
+          >
+            No request templates match
+          </div>
           <label
-            v-for="template in workspace.state.templates"
+            v-for="template in growCandidates"
             :key="template.id"
             class="flex items-center gap-3 px-3 py-1.5 text-sm hover:bg-surface-800"
           >
@@ -811,6 +686,11 @@ const extendPicked = async () => {
             <span class="truncate font-mono text-surface-200">{{
               displayPath(template)
             }}</span>
+            <span
+              v-if="needsFor(template).length > 0"
+              class="ml-auto shrink-0 text-xs text-amber-400"
+              >needs {{ needsFor(template).join(", ") }}</span
+            >
           </label>
         </div>
         <div
@@ -833,7 +713,7 @@ const extendPicked = async () => {
           />
           <Button
             v-else
-            label="Grow"
+            label="Run"
             size="small"
             :disabled="
               growTypes.length === 0 ||
