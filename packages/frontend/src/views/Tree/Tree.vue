@@ -4,7 +4,7 @@ import ContextMenu from "primevue/contextmenu";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import type { RequestTemplate, Sequence } from "shared";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
@@ -265,11 +265,44 @@ const focusId = ref<string>();
 // The scrolling part of the list, and how far it has been scrolled
 const treeScroll = ref<HTMLElement>();
 const scrolledTo = ref(0);
+const viewportPx = ref(800);
 const rowPx = ref(28);
 
 const onTreeScroll = () => {
   scrolledTo.value = treeScroll.value?.scrollTop ?? 0;
 };
+
+// The viewport's height changes only when the window does
+const measureViewport = () => {
+  viewportPx.value = treeScroll.value?.clientHeight ?? viewportPx.value;
+};
+
+onMounted(() => {
+  scrolledTo.value = treeScroll.value?.scrollTop ?? 0;
+  measureViewport();
+  window.addEventListener("resize", measureViewport);
+});
+
+onUnmounted(() => window.removeEventListener("resize", measureViewport));
+
+// Only the rows near the viewport are drawn; spacers stand in for the rest, so the
+// page stays small however many sequences there are
+const overscan = 10;
+const windowRows = computed(() => {
+  const total = visibleRows.value.length;
+  const first = Math.floor(scrolledTo.value / rowPx.value);
+  const count = Math.ceil(viewportPx.value / rowPx.value);
+  const start = Math.min(total, Math.max(0, first - overscan));
+  const end = Math.min(total, first + count + overscan);
+  return { start, end, total };
+});
+const renderedRows = computed(() =>
+  visibleRows.value.slice(windowRows.value.start, windowRows.value.end),
+);
+const topSpacerPx = computed(() => windowRows.value.start * rowPx.value);
+const bottomSpacerPx = computed(
+  () => (windowRows.value.total - windowRows.value.end) * rowPx.value,
+);
 
 // Measures a row once the list changes, so the scroll arithmetic matches the rows
 watch(visibleRows, () => {
@@ -816,8 +849,9 @@ const clearHighlight = () => {
         >
           No sequences match the regex.
         </div>
+        <div :style="{ height: `${topSpacerPx}px` }" />
         <button
-          v-for="row in visibleRows"
+          v-for="row in renderedRows"
           :key="row.sequence.id"
           :data-row-id="row.sequence.id"
           type="button"
@@ -919,6 +953,7 @@ const clearHighlight = () => {
             </span>
           </div>
         </button>
+        <div :style="{ height: `${bottomSpacerPx}px` }" />
       </div>
     </div>
 
