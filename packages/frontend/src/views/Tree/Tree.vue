@@ -16,7 +16,10 @@ import {
 } from "@/settings/settings";
 import type { Workspace } from "@/workspace/workspace";
 
-const { workspace } = defineProps<{ workspace: Workspace }>();
+const { workspace, visible } = defineProps<{
+  workspace: Workspace;
+  visible: boolean;
+}>();
 const emit = defineEmits<{ openSequence: [id: string] }>();
 const sdk = useSDK();
 
@@ -321,6 +324,40 @@ onMounted(() => {
 
 onUnmounted(() => window.removeEventListener("resize", measureViewport));
 
+// A hidden tab loses its scroll position, so the window is re-read when shown
+const syncScroll = () => {
+  scrolledTo.value = treeScroll.value?.scrollTop ?? 0;
+  measureViewport();
+  measureRow();
+};
+watch(
+  () => visible,
+  (shown) => {
+    if (shown) void nextTick(syncScroll);
+  },
+);
+
+// A press that moves or scrolls before release is a drag, not a click, so
+// scrolling the list never clears the highlight or the batch
+let press: { x: number; y: number; top: number } | undefined;
+const onPress = (event: PointerEvent) => {
+  press = {
+    x: event.clientX,
+    y: event.clientY,
+    top: treeScroll.value?.scrollTop ?? 0,
+  };
+};
+const onClickCapture = (event: MouseEvent) => {
+  const start = press;
+  press = undefined;
+  if (start === undefined) return;
+  const moved =
+    Math.abs(event.clientX - start.x) > 4 ||
+    Math.abs(event.clientY - start.y) > 4 ||
+    (treeScroll.value?.scrollTop ?? 0) !== start.top;
+  if (moved) event.stopPropagation();
+};
+
 // Only the rows near the viewport are drawn; spacers stand in for the rest, so the
 // page stays small however many sequences there are
 const overscan = 10;
@@ -340,13 +377,17 @@ const bottomSpacerPx = computed(
   () => (windowRows.value.total - windowRows.value.end) * rowPx.value,
 );
 
-// Measures a row once the list changes, so the scroll arithmetic matches the rows
-watch(visibleRows, () => {
-  void nextTick(() => {
-    const row = treeScroll.value?.querySelector<HTMLElement>("[data-row-id]");
-    if (row !== null && row !== undefined) rowPx.value = row.offsetHeight;
-  });
-});
+// Measures a row so the scroll arithmetic matches the rows. A hidden tab
+// reports 0, which is ignored so the last real height is kept.
+const measureRow = () => {
+  const row = treeScroll.value?.querySelector<HTMLElement>("[data-row-id]");
+  if (row !== null && row !== undefined && row.offsetHeight > 0) {
+    rowPx.value = row.offsetHeight;
+  }
+};
+
+// Measures a row once the list changes
+watch(visibleRows, () => void nextTick(measureRow));
 
 // Every sequence the highlight covers: the focused row and the batch
 const highlightedIds = computed(() => {
@@ -909,6 +950,8 @@ const clearHighlight = () => {
         ref="treeScroll"
         class="flex-1 min-h-0 overflow-auto"
         @scroll="onTreeScroll"
+        @pointerdown="onPress"
+        @click.capture="onClickCapture"
       >
         <div
           v-if="workspace.rows.value.length === 0"

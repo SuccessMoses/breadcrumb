@@ -100,7 +100,10 @@ const showTemplate = () => {
         ><Sequences :workspace="workspace" @open-template="showTemplate"
       /></TabPanel>
       <TabPanel value="tree" class="h-full"
-        ><Tree :workspace="workspace" @open-sequence="showSequence"
+        ><Tree
+          :workspace="workspace"
+          :visible="activeTab === 'tree'"
+          @open-sequence="showSequence"
       /></TabPanel>
     </TabPanels>
   </Tabs>
