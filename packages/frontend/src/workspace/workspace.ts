@@ -442,6 +442,13 @@ export const createWorkspace = (
   const templatesById = computed(
     () => new Map(state.templates.map((t) => [t.id, t])),
   );
+  // Looked up per label; rebuilding this map per call made naming 2k highlighted
+  // sequences quadratic
+  const sequencesById = computed(() => {
+    const byId = new Map<string, Sequence>();
+    for (const sequence of state.sequences) byId.set(sequence.id, sequence);
+    return byId;
+  });
   // Sequences are kept in creation order, so the last entry is the newest
   const renderings = computed(() => {
     const byTemplate = new Map<string, Rendering[]>();
@@ -842,7 +849,7 @@ export const createWorkspace = (
   // Its own name, preceded by up to two ancestors' names, each shortened to its
   // first 8 characters: 3f2a9c1e-7b0d4e21-a09c3d5f. The root is not part of a name.
   const sequenceLabel = (sequence: Sequence) => {
-    const byId = new Map(state.sequences.map((s) => [s.id, s]));
+    const byId = sequencesById.value;
     const names = [sequence.name];
     let parentId = sequence.parentId;
     while (parentId !== undefined) {

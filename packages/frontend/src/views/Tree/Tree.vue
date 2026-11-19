@@ -113,20 +113,33 @@ const expandAll = () => {
   collapsed.value = new Set();
 };
 
+// A regex search shows every match, so collapsing only applies without a filter.
+const filtering = computed(() => {
+  const match = compiled.value;
+  return match !== undefined && match.kind !== "error";
+});
+
+// The searchable text of each sequence, built once per change rather than on
+// every keystroke: a 2k-sequence tree would otherwise rebuild megabytes of text
+// per character typed into the filter.
+const textsById = computed(() => {
+  if (!filtering.value) return undefined;
+  const texts = new Map<string, string>();
+  for (const row of workspace.rows.value) {
+    texts.set(row.sequence.id, sequenceText(row.sequence));
+  }
+  return texts;
+});
+
 const matchingRows = computed(() => {
   const match = compiled.value;
   if (match === undefined || match.kind === "error") {
     return workspace.rows.value;
   }
+  const texts = textsById.value;
   return workspace.rows.value.filter((row) =>
-    match.regex.test(sequenceText(row.sequence)),
+    match.regex.test(texts?.get(row.sequence.id) ?? ""),
   );
-});
-
-// A regex search shows every match, so collapsing only applies without a filter.
-const filtering = computed(() => {
-  const match = compiled.value;
-  return match !== undefined && match.kind !== "error";
 });
 
 const visibleRows = computed(() => {
@@ -612,15 +625,35 @@ const deleteTarget = () => {
   });
 };
 
-const subtreeStepCount = (id: string): number => {
-  const sequence = workspace.state.sequences.find((s) => s.id === id);
-  if (sequence === undefined) return 0;
-  const children = workspace.state.sequences.filter((s) => s.parentId === id);
-  return (
-    sequence.steps.length +
-    children.reduce((sum, child) => sum + subtreeStepCount(child.id), 0)
-  );
-};
+// Steps in each sequence's subtree, in one preorder pass over the rows. The old
+// recursive scan filtered every sequence per node, so a right-click on a parent
+// of a 2k tree spent seconds counting.
+const subtreeSteps = computed(() => {
+  const counts = new Map<string, number>();
+  const stack: { id: string; depth: number; steps: number }[] = [];
+  const close = () => {
+    const done = stack.pop();
+    if (done === undefined) return;
+    counts.set(done.id, done.steps);
+    const parent = stack[stack.length - 1];
+    if (parent !== undefined) parent.steps += done.steps;
+  };
+  for (const row of workspace.rows.value) {
+    while (
+      stack.length > 0 &&
+      (stack[stack.length - 1]?.depth ?? -1) >= row.depth
+    ) {
+      close();
+    }
+    stack.push({
+      id: row.sequence.id,
+      depth: row.depth,
+      steps: row.sequence.steps.length,
+    });
+  }
+  while (stack.length > 0) close();
+  return counts;
+});
 
 const rerenderTarget = async () => {
   const target = extendTarget.value;
@@ -679,7 +712,7 @@ const menuItems = computed(() => {
       icon: "fas fa-rotate",
       disabled:
         extendTarget.value === undefined ||
-        subtreeStepCount(extendTarget.value.id) === 0,
+        (subtreeSteps.value.get(extendTarget.value.id) ?? 0) === 0,
       command: rerenderTarget,
     },
     {
