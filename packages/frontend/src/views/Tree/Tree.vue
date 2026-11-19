@@ -109,6 +109,18 @@ const collapseAll = () => {
   collapsed.value = new Set(expandableIds.value);
 };
 
+// Highlights every sequence with no children, so the paths to them all light up
+const selectLeaves = () => {
+  selected.value = new Set(
+    visibleRows.value
+      .filter(
+        (row) =>
+          row.sequence.parentId !== undefined && !hasChildren(row.sequence.id),
+      )
+      .map((row) => row.sequence.id),
+  );
+};
+
 const expandAll = () => {
   collapsed.value = new Set();
 };
@@ -809,6 +821,14 @@ const clearHighlight = () => {
             @click="expandAll"
           >
             <i class="fas fa-angles-down" />
+          </button>
+          <button
+            type="button"
+            aria-label="Highlight all leaves"
+            class="px-1.5 py-1 text-surface-400 hover:text-surface-100"
+            @click="selectLeaves"
+          >
+            <i class="fas fa-leaf" />
           </button>
         </div>
       </div>
