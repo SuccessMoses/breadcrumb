@@ -15,7 +15,11 @@ import { compilePattern, sequenceText } from "@/query/sequenceText";
 import { type Capture, NO_RULE, type TemplateRule } from "@/workspace/captures";
 import type { Workspace } from "@/workspace/workspace";
 
-const { workspace } = defineProps<{ workspace: Workspace }>();
+const { workspace, visible } = defineProps<{
+  workspace: Workspace;
+  // Whether the Requests tab is shown; the list is hidden, not unmounted, otherwise
+  visible: boolean;
+}>();
 const emit = defineEmits<{ openSequence: [sequenceId: string] }>();
 const sdk = useSDK();
 
@@ -257,9 +261,10 @@ const onFileChange = async (event: Event) => {
 
 watch(selectedTemplateId, showTemplateText);
 
-// The request in the editor is shown in the list: its collection is opened and its
-// row brought into view
-watch(selectedTemplateId, (id) => {
+// Brings the request in the editor into view in the list: its collection is opened
+// and its row scrolled to
+const revealSelected = () => {
+  const id = selectedTemplateId.value;
   if (id === undefined) return;
   const collection = workspace.collectionOf(id);
   if (isCollapsed(collection)) {
@@ -270,7 +275,17 @@ watch(selectedTemplateId, (id) => {
       .querySelector(`[data-template-id="${id}"]`)
       ?.scrollIntoView({ block: "nearest" });
   });
-});
+};
+
+watch(selectedTemplateId, revealSelected);
+
+// Switching to this tab brings the request in the editor into view again
+watch(
+  () => visible,
+  (shown) => {
+    if (shown) revealSelected();
+  },
+);
 
 // A step opened from the Sequences view asks for the template behind it. Clear
 // whatever would hide its row, select it, and scroll to it.
@@ -286,11 +301,7 @@ watch(
     };
     selectedTemplateId.value = templateId;
     workspace.consumeFocusTemplate();
-    void nextTick(() => {
-      document
-        .querySelector(`[data-template-id="${templateId}"]`)
-        ?.scrollIntoView({ block: "nearest" });
-    });
+    revealSelected();
   },
   { immediate: true },
 );
@@ -391,11 +402,6 @@ onMounted(() => {
                 :data-template-id="template.id"
                 type="button"
                 class="w-full flex items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
-                :class="
-                  template.id === selectedTemplateId
-                    ? 'text-amber-200 font-bold'
-                    : ''
-                "
                 @contextmenu.prevent="openMenu($event, template)"
                 @click="selectedTemplateId = template.id"
                 @dblclick="openRendering(template.id)"
@@ -405,9 +411,15 @@ onMounted(() => {
                   :style="{ backgroundColor: methodColor(template.method) }"
                   >{{ template.method }}</span
                 >
-                <span class="font-mono truncate text-surface-200">{{
-                  displayPath(template) || "(empty request)"
-                }}</span>
+                <span
+                  class="font-mono truncate"
+                  :class="
+                    template.id === selectedTemplateId
+                      ? 'text-amber-200 font-bold'
+                      : 'text-surface-200'
+                  "
+                  >{{ displayPath(template) || "(empty request)" }}</span
+                >
                 <span class="truncate text-xs text-surface-500">{{
                   template.summary
                 }}</span>
