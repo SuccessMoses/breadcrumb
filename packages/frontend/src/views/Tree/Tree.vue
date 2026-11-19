@@ -263,6 +263,15 @@ const focusId = ref<string>();
 // Batch selection. Hidden rows are dropped from it, so actions only touch what is shown.
 const selected = ref<Set<string>>(new Set());
 
+// The Sequences tab lists what is highlighted here
+watch([focusId, selected], () => {
+  const ids = [...selected.value];
+  if (focusId.value !== undefined && !ids.includes(focusId.value)) {
+    ids.push(focusId.value);
+  }
+  workspace.setHighlighted(ids);
+});
+
 // The sequence and every sequence below it
 const subtreeOf = (id: string): string[] => {
   const childrenOf = new Map<string, string[]>();

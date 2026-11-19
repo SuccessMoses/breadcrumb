@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import Button from "primevue/button";
-import Select from "primevue/select";
-import type { SequenceStep } from "shared";
+import InputText from "primevue/inputtext";
+import type { Sequence, SequenceStep } from "shared";
 import { computed, nextTick, ref, watch } from "vue";
 
 import StepEditor from "./StepEditor.vue";
@@ -16,19 +16,30 @@ const sdk = useSDK();
 // What a step's request editor exposes, so its edits can be read back
 type EditorHandle = { getText: () => string };
 
+const shownId = ref<string>();
 const selectedStepId = ref<string>();
 const sending = ref(false);
+const editingId = ref<string>();
+const editName = ref("");
 const requestEditors = new Map<string, EditorHandle>();
 const blocks = new Map<string, HTMLElement>();
 
-const sequenceOptions = computed(() =>
-  workspace.rows.value.map((row) => ({
-    id: row.sequence.id,
-    label: `${"  ".repeat(row.depth)}${workspace.sequenceLabel(row.sequence)}`,
-  })),
+// The sequences highlighted in the Tree, in tree order
+const listed = computed<Sequence[]>(() => {
+  const ids = new Set(workspace.highlighted.value);
+  return workspace.rows.value
+    .map((row) => row.sequence)
+    .filter((sequence) => ids.has(sequence.id));
+});
+
+// The sequence whose steps are shown: the chosen one, else the first listed
+const shown = computed(
+  () =>
+    listed.value.find((sequence) => sequence.id === shownId.value) ??
+    listed.value[0],
 );
 
-const steps = computed(() => workspace.selectedSequence.value?.steps ?? []);
+const steps = computed(() => shown.value?.steps ?? []);
 
 const selectedStep = computed(() =>
   steps.value.find((step) => step.id === selectedStepId.value),
@@ -63,7 +74,7 @@ const registerBlock = (stepId: string, element: unknown) => {
 
 // Saves what is on screen in every request, so sending uses the edited text
 const saveEdits = () => {
-  const sequence = workspace.selectedSequence.value;
+  const sequence = shown.value;
   if (sequence === undefined) return;
   for (const step of sequence.steps) {
     const editor = requestEditors.get(step.id);
@@ -74,7 +85,7 @@ const saveEdits = () => {
 };
 
 const sendSteps = async (targets: SequenceStep[]) => {
-  const sequence = workspace.selectedSequence.value;
+  const sequence = shown.value;
   if (sequence === undefined || targets.length === 0) return;
   saveEdits();
   sending.value = true;
@@ -89,12 +100,12 @@ const sendSteps = async (targets: SequenceStep[]) => {
   sending.value = false;
 };
 
-// Same as rerendering from the Tree: the selected sequence and everything under it
+// Same as rerendering from the Tree: the shown sequence and everything under it
 const rerenderSequence = async () => {
-  const sequence = workspace.selectedSequence.value;
+  const sequence = shown.value;
   if (sequence === undefined) return;
   const confirmed = window.confirm(
-    `Re-render "${sequence.name}" and every sequence under it from its templates? Manual step edits will be replaced.`,
+    `Re-render "${workspace.sequenceLabel(sequence)}" and every sequence under it from its templates? Manual step edits will be replaced.`,
   );
   if (!confirmed) return;
   const {
@@ -130,22 +141,53 @@ const openTemplate = (step: SequenceStep) => {
   emit("openTemplate", step.templateId);
 };
 
+// Renaming edits a sequence's own name; the root keeps its name
+const startRename = (sequence: Sequence) => {
+  if (sequence.parentId === undefined) return;
+  editingId.value = sequence.id;
+  editName.value = sequence.name;
+};
+
+const finishRename = () => {
+  const id = editingId.value;
+  editingId.value = undefined;
+  if (id !== undefined) workspace.renameSequence(id, editName.value);
+};
+
+const cancelRename = () => {
+  editingId.value = undefined;
+};
+
+// Opening a sequence from the Tree shows it
 watch(
   () => workspace.state.selectedSequenceId,
+  (id) => {
+    if (id !== undefined) shownId.value = id;
+  },
+  { immediate: true },
+);
+
+// Showing another sequence starts at its first step
+watch(
+  () => shown.value?.id,
   () => {
-    selectedStepId.value = workspace.selectedSequence.value?.steps[0]?.id;
+    selectedStepId.value = steps.value[0]?.id;
   },
   { immediate: true },
 );
 
 // Double-clicking a sequence in the Tree asks for a specific step of it, so
-// bring that step into view instead of the first one.
+// bring that step's sequence and the step into view instead of the first one.
 watch(
   () => workspace.focusStep.value,
   (stepId) => {
     if (stepId === undefined) return;
-    if (!steps.value.some((step) => step.id === stepId)) return;
+    const owner = workspace.state.sequences.find((sequence) =>
+      sequence.steps.some((step) => step.id === stepId),
+    );
+    if (owner === undefined) return;
     workspace.consumeFocusStep();
+    shownId.value = owner.id;
     // The blocks are rendered by now only after this tick
     void nextTick(() => jumpTo(stepId));
   },
@@ -156,72 +198,74 @@ watch(
 
 <template>
   <div class="h-full flex flex-col gap-3 p-3">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <Select
-        :model-value="workspace.state.selectedSequenceId"
-        :options="sequenceOptions"
-        option-label="label"
-        option-value="id"
-        placeholder="Select a sequence"
+    <div class="flex justify-end gap-2">
+      <Button
+        label="Rerender"
         size="small"
-        class="w-72"
-        @update:model-value="workspace.selectSequence"
+        severity="secondary"
+        icon="fas fa-rotate"
+        :disabled="shown === undefined"
+        @click="rerenderSequence"
       />
-      <div class="flex gap-2">
-        <Button
-          label="Rerender"
-          size="small"
-          severity="secondary"
-          icon="fas fa-rotate"
-          :disabled="workspace.selectedSequence.value === undefined"
-          @click="rerenderSequence"
-        />
-        <Button
-          label="Send step"
-          size="small"
-          severity="secondary"
-          :disabled="selectedStep === undefined || sending"
-          @click="sendStep"
-        />
-      </div>
+      <Button
+        label="Send step"
+        size="small"
+        severity="secondary"
+        :disabled="selectedStep === undefined || sending"
+        @click="sendStep"
+      />
     </div>
 
     <div class="flex-1 min-h-0 flex gap-3">
       <aside
         class="w-64 shrink-0 overflow-auto rounded border border-surface-700"
       >
+        <div v-if="listed.length === 0" class="p-3 text-surface-400">
+          Highlight sequences in the Tree tab to view them here.
+        </div>
         <div
-          v-if="workspace.selectedSequence.value === undefined"
-          class="p-3 text-surface-400"
-        >
-          Extend a sequence in the Tree tab to create one.
-        </div>
-        <div v-else-if="steps.length === 0" class="p-3 text-surface-400">
-          This sequence has no steps yet.
-        </div>
-        <button
-          v-for="(step, index) in steps"
-          :key="step.id"
-          type="button"
-          class="w-full min-w-0 flex gap-2 px-3 py-2 text-left text-sm hover:bg-surface-800"
+          v-for="sequence in listed"
+          :key="sequence.id"
+          class="cursor-pointer px-3 py-2"
           :class="
-            step.id === selectedStepId
+            sequence.id === shown?.id
               ? 'bg-surface-800 text-surface-100'
-              : 'text-surface-300'
+              : 'text-surface-300 hover:bg-surface-800'
           "
-          @click="jumpTo(step.id)"
-          @dblclick="openTemplate(step)"
+          @click="shownId = sequence.id"
+          @dblclick="startRename(sequence)"
         >
-          <span class="text-surface-500">{{ index + 1 }}</span>
-          <span class="min-w-0 truncate" :title="requestLine(step.request)">{{
-            requestLine(step.request)
-          }}</span>
-        </button>
+          <InputText
+            v-if="editingId === sequence.id"
+            v-model="editName"
+            size="small"
+            class="w-full"
+            autofocus
+            @click.stop
+            @keydown.enter="finishRename"
+            @keydown.esc="cancelRename"
+            @blur="finishRename"
+          />
+          <template v-else>
+            <div class="truncate text-sm">
+              {{ workspace.sequenceLabel(sequence) }}
+            </div>
+            <div class="text-xs text-surface-500">
+              {{ sequence.steps.length }} steps
+            </div>
+          </template>
+        </div>
       </aside>
 
       <div
         class="flex-1 min-h-0 min-w-0 overflow-auto flex flex-col gap-3 pr-1"
       >
+        <div v-if="shown === undefined" class="p-3 text-surface-400">
+          Nothing to show.
+        </div>
+        <div v-else-if="steps.length === 0" class="p-3 text-surface-400">
+          This sequence has no steps yet.
+        </div>
         <section
           v-for="(step, index) in steps"
           :key="step.id"

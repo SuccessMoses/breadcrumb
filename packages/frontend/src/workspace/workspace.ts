@@ -17,6 +17,7 @@ import {
   runCaptures,
   type TemplateRule,
 } from "./captures";
+import { randomName } from "./names";
 
 import { displayPath } from "@/requests/display";
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
@@ -95,6 +96,9 @@ export type Workspace = {
   missingInputs: (templateId: string, sequenceId: string) => string[];
   setRule: (templateId: string, rule: TemplateRule) => void;
   selectSequence: (id: string) => void;
+  highlighted: Ref<string[]>;
+  setHighlighted: (ids: string[]) => void;
+  renameSequence: (id: string, name: string) => void;
   saveStepRequest: (
     sequenceId: string,
     stepId: string,
@@ -383,20 +387,6 @@ export const createWorkspace = (
 
   // Name each sequence after the alias of the template that created it (its
   // last step). Names are labels only; ids are what keep sequences apart.
-  const relabel = () => {
-    for (const sequence of state.sequences) {
-      const last = sequence.steps[sequence.steps.length - 1];
-      const template =
-        last === undefined
-          ? undefined
-          : state.templates.find((t) => t.id === last.templateId);
-      if (template !== undefined) {
-        sequence.name = state.aliases[template.id] ?? defaultAlias(template);
-      }
-    }
-  };
-  relabel();
-
   const templatesById = computed(
     () => new Map(state.templates.map((t) => [t.id, t])),
   );
@@ -508,7 +498,7 @@ export const createWorkspace = (
     };
     const child: Sequence = {
       id: newId(),
-      name: state.aliases[templateId] ?? defaultAlias(template),
+      name: randomName(new Set(state.sequences.map((s) => s.name))),
       parentId,
       steps: [...inherited, step],
     };
@@ -596,8 +586,26 @@ export const createWorkspace = (
     return doomed.size;
   };
 
+  // The sequences highlighted in the Tree; the Sequences tab lists them
+  const highlighted = ref<string[]>([]);
+  const setHighlighted = (ids: string[]) => {
+    highlighted.value = ids;
+  };
+
   const selectSequence = (id: string) => {
     state.selectedSequenceId = id;
+    if (!highlighted.value.includes(id)) {
+      highlighted.value = [...highlighted.value, id];
+    }
+  };
+
+  // Renames a sequence; the root keeps its name and an empty name is ignored
+  const renameSequence = (id: string, name: string) => {
+    const trimmed = name.trim();
+    const sequence = state.sequences.find((s) => s.id === id);
+    if (trimmed === "" || sequence === undefined) return;
+    if (sequence.parentId === undefined) return;
+    sequence.name = trimmed;
   };
 
   // Regenerates the request of every step in a sequence and everything under it
@@ -708,8 +716,7 @@ export const createWorkspace = (
   const templateAlias = (template: RequestTemplate) =>
     state.aliases[template.id] ?? defaultAlias(template);
 
-  // A sequence is labelled by the method and path of the template its last
-  // step came from, the same as in the Requests list. The root has no steps.
+  // The method and path of the template a sequence's last step came from
   const sequenceTemplate = (sequence: Sequence) => {
     const last = sequence.steps[sequence.steps.length - 1];
     return last === undefined
@@ -722,11 +729,19 @@ export const createWorkspace = (
     const template = sequenceTemplate(sequence);
     return template === undefined ? sequence.name : displayPath(template);
   };
+  // Its own name, preceded by up to two ancestors' names: brisk-otter-penguin.
+  // The root is not part of a name.
   const sequenceLabel = (sequence: Sequence) => {
-    const method = sequenceMethod(sequence);
-    return method === undefined
-      ? sequence.name
-      : `${method} ${sequencePath(sequence)}`;
+    const byId = new Map(state.sequences.map((s) => [s.id, s]));
+    const names = [sequence.name];
+    let parentId = sequence.parentId;
+    while (parentId !== undefined) {
+      const parent = byId.get(parentId);
+      if (parent === undefined || parent.parentId === undefined) break;
+      names.unshift(parent.name);
+      parentId = parent.parentId;
+    }
+    return names.slice(-3).join("-");
   };
 
   return {
@@ -750,6 +765,9 @@ export const createWorkspace = (
     setRule,
     missingInputs,
     selectSequence,
+    highlighted,
+    setHighlighted,
+    renameSequence,
     saveStepRequest,
     saveStepResponse,
     collectionOf,
