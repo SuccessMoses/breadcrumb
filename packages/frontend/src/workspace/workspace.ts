@@ -17,7 +17,6 @@ import {
   runCaptures,
   type TemplateRule,
 } from "./captures";
-import { randomName } from "./names";
 
 import { displayPath } from "@/requests/display";
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
@@ -32,7 +31,6 @@ type WorkspaceState = {
   sequences: Sequence[];
   selectedSequenceId: string | undefined;
   texts: Record<string, string>;
-  aliases: Record<string, string>;
   collections: Collection[];
   templateCollection: Record<string, string>;
   rules: Record<string, TemplateRule>;
@@ -98,7 +96,6 @@ export type Workspace = {
   selectSequence: (id: string) => void;
   highlighted: Ref<string[]>;
   setHighlighted: (ids: string[]) => void;
-  renameSequence: (id: string, name: string) => void;
   saveStepRequest: (
     sequenceId: string,
     stepId: string,
@@ -115,7 +112,6 @@ export type Workspace = {
   templateText: (templateId: string) => string | undefined;
   setTemplateText: (templateId: string, text: string) => void;
   resetTemplateText: (templateId: string) => void;
-  templateAlias: (template: RequestTemplate) => string;
   sequenceLabel: (sequence: Sequence) => string;
   sequenceMethod: (sequence: Sequence) => string | undefined;
   sequencePath: (sequence: Sequence) => string;
@@ -127,7 +123,6 @@ const emptyState = (): WorkspaceState => ({
   sequences: [],
   selectedSequenceId: undefined,
   texts: {},
-  aliases: {},
   collections: [],
   templateCollection: {},
   rules: {},
@@ -215,11 +210,6 @@ const restoreRules = (value: unknown): Record<string, TemplateRule> =>
     : {};
 
 const ROOT_NAME = "/";
-
-const defaultAlias = (template: RequestTemplate) =>
-  template.operationId ??
-  template.summary ??
-  `${template.method} ${template.path}`;
 
 const restoreSequences = (
   values: unknown[],
@@ -318,9 +308,6 @@ export const createWorkspace = (
     state.texts = restoreStrings(
       hasKey(stored, "texts") ? stored.texts : undefined,
     );
-    state.aliases = restoreStrings(
-      hasKey(stored, "aliases") ? stored.aliases : undefined,
-    );
     state.rules = restoreRules(
       hasKey(stored, "rules") ? stored.rules : undefined,
     );
@@ -339,7 +326,6 @@ export const createWorkspace = (
       texts: state.texts,
       collections: state.collections,
       templateCollection: state.templateCollection,
-      aliases: state.aliases,
       rules: state.rules,
     }),
     (snapshot) => {
@@ -498,7 +484,7 @@ export const createWorkspace = (
     };
     const child: Sequence = {
       id: newId(),
-      name: randomName(new Set(state.sequences.map((s) => s.name))),
+      name: crypto.randomUUID(),
       parentId,
       steps: [...inherited, step],
     };
@@ -597,15 +583,6 @@ export const createWorkspace = (
     if (!highlighted.value.includes(id)) {
       highlighted.value = [...highlighted.value, id];
     }
-  };
-
-  // Renames a sequence; the root keeps its name and an empty name is ignored
-  const renameSequence = (id: string, name: string) => {
-    const trimmed = name.trim();
-    const sequence = state.sequences.find((s) => s.id === id);
-    if (trimmed === "" || sequence === undefined) return;
-    if (sequence.parentId === undefined) return;
-    sequence.name = trimmed;
   };
 
   // Regenerates the request of every step in a sequence and everything under it
@@ -713,9 +690,6 @@ export const createWorkspace = (
     delete state.texts[templateId];
   };
 
-  const templateAlias = (template: RequestTemplate) =>
-    state.aliases[template.id] ?? defaultAlias(template);
-
   // The method and path of the template a sequence's last step came from
   const sequenceTemplate = (sequence: Sequence) => {
     const last = sequence.steps[sequence.steps.length - 1];
@@ -729,8 +703,8 @@ export const createWorkspace = (
     const template = sequenceTemplate(sequence);
     return template === undefined ? sequence.name : displayPath(template);
   };
-  // Its own name, preceded by up to two ancestors' names: brisk-otter-penguin.
-  // The root is not part of a name.
+  // Its own name, preceded by up to two ancestors' names, each shortened to its
+  // first 8 characters: 3f2a9c1e-7b0d4e21-a09c3d5f. The root is not part of a name.
   const sequenceLabel = (sequence: Sequence) => {
     const byId = new Map(state.sequences.map((s) => [s.id, s]));
     const names = [sequence.name];
@@ -741,7 +715,10 @@ export const createWorkspace = (
       names.unshift(parent.name);
       parentId = parent.parentId;
     }
-    return names.slice(-3).join("-");
+    return names
+      .slice(-3)
+      .map((name) => name.slice(0, 8))
+      .join("-");
   };
 
   return {
@@ -767,7 +744,6 @@ export const createWorkspace = (
     selectSequence,
     highlighted,
     setHighlighted,
-    renameSequence,
     saveStepRequest,
     saveStepResponse,
     collectionOf,
@@ -776,7 +752,6 @@ export const createWorkspace = (
     templateText,
     setTemplateText,
     resetTemplateText,
-    templateAlias,
     sequenceLabel,
     sequenceMethod,
     sequencePath,

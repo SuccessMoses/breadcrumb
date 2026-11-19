@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Button from "primevue/button";
-import InputText from "primevue/inputtext";
 import type { Sequence, SequenceStep } from "shared";
 import { computed, nextTick, ref, watch } from "vue";
 
@@ -19,8 +18,6 @@ type EditorHandle = { getText: () => string };
 const shownId = ref<string>();
 const selectedStepId = ref<string>();
 const sending = ref(false);
-const editingId = ref<string>();
-const editName = ref("");
 const requestEditors = new Map<string, EditorHandle>();
 const blocks = new Map<string, HTMLElement>();
 
@@ -162,23 +159,6 @@ const deleteShown = () => {
   });
 };
 
-// Renaming edits a sequence's own name; the root keeps its name
-const startRename = (sequence: Sequence) => {
-  if (sequence.parentId === undefined) return;
-  editingId.value = sequence.id;
-  editName.value = sequence.name;
-};
-
-const finishRename = () => {
-  const id = editingId.value;
-  editingId.value = undefined;
-  if (id !== undefined) workspace.renameSequence(id, editName.value);
-};
-
-const cancelRename = () => {
-  editingId.value = undefined;
-};
-
 // Opening a sequence from the Tree shows it
 watch(
   () => workspace.state.selectedSequenceId,
@@ -262,27 +242,13 @@ watch(
               : 'text-surface-300 hover:bg-surface-800'
           "
           @click="shownId = sequence.id"
-          @dblclick="startRename(sequence)"
         >
-          <InputText
-            v-if="editingId === sequence.id"
-            v-model="editName"
-            size="small"
-            class="w-full"
-            autofocus
-            @click.stop
-            @keydown.enter="finishRename"
-            @keydown.esc="cancelRename"
-            @blur="finishRename"
-          />
-          <template v-else>
-            <div class="truncate text-sm">
-              {{ workspace.sequenceLabel(sequence) }}
-            </div>
-            <div class="text-xs text-surface-500">
-              {{ sequence.steps.length }} steps
-            </div>
-          </template>
+          <div class="truncate text-sm">
+            {{ workspace.sequenceLabel(sequence) }}
+          </div>
+          <div class="text-xs text-surface-500">
+            {{ sequence.steps.length }} steps
+          </div>
         </div>
       </aside>
 

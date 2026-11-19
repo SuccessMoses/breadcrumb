@@ -392,13 +392,41 @@ const growTemplates = computed(() =>
   ),
 );
 
+// The Extend list is grouped by collection, as in the Requests tab
+const growGroups = computed(() =>
+  workspace.state.collections
+    .map((collection) => ({
+      collection,
+      templates: growCandidates.value.filter(
+        (template) => workspace.collectionOf(template.id) === collection.id,
+      ),
+    }))
+    .filter((group) => group.templates.length > 0),
+);
+
+// Whether all, some or none of a collection's templates are picked
+const collectionState = (templates: RequestTemplate[]) => {
+  const picked = templates.filter((t) => growTypes.value.includes(t.id)).length;
+  if (picked === 0) return "none";
+  return picked === templates.length ? "all" : "some";
+};
+
+// Picks every template of a collection, or clears them if all are picked
+const toggleCollection = (templates: RequestTemplate[]) => {
+  const ids = templates.map((template) => template.id);
+  growTypes.value =
+    collectionState(templates) === "all"
+      ? growTypes.value.filter((id) => !ids.includes(id))
+      : [...new Set([...growTypes.value, ...ids])];
+};
+
 const growCandidates = computed(() => {
   const query = growSearch.value.trim().toLowerCase();
   return workspace.state.templates.filter(
     (template) =>
       query === "" ||
-      [template.method, template.url, workspace.templateAlias(template)].some(
-        (field) => field.toLowerCase().includes(query),
+      [template.method, template.url].some((field) =>
+        field.toLowerCase().includes(query),
       ),
   );
 });
@@ -812,41 +840,64 @@ const clearHighlight = () => {
         </div>
         <InputText
           v-model="growSearch"
-          placeholder="Search method, URL, or alias"
+          placeholder="Search method or URL"
           size="small"
           autofocus
         />
         <div class="max-h-80 overflow-auto flex flex-col">
           <div
-            v-if="growCandidates.length === 0"
+            v-if="growGroups.length === 0"
             class="py-6 text-center text-surface-400"
           >
             No request templates match
           </div>
-          <label
-            v-for="template in growCandidates"
-            :key="template.id"
-            class="flex items-center gap-3 px-3 py-1.5 text-sm hover:bg-surface-800"
+          <div
+            v-for="group in growGroups"
+            :key="group.collection.id"
+            class="flex flex-col"
           >
-            <input
-              type="checkbox"
-              :checked="growTypes.includes(template.id)"
-              @change="toggleGrowType(template.id)"
-            />
-            <span
-              class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
-              :style="{ backgroundColor: methodColor(template.method) }"
-              >{{ template.method }}</span
+            <label
+              class="flex items-center gap-3 px-3 py-1.5 text-sm font-semibold text-surface-100 hover:bg-surface-800"
             >
-            <span class="truncate font-mono text-surface-200">{{
-              displayPath(template)
-            }}</span>
-            <span
-              v-if="needsFor(template).length > 0"
-              class="ml-auto shrink-0 text-xs text-amber-400"
-              >needs {{ needsFor(template).join(", ") }}</span
+              <input
+                type="checkbox"
+                :checked="collectionState(group.templates) === 'all'"
+                :indeterminate.prop="
+                  collectionState(group.templates) === 'some'
+                "
+                @change="toggleCollection(group.templates)"
+              />
+              <i class="fas fa-folder text-surface-500" />
+              <span class="truncate">{{ group.collection.name }}</span>
+              <span class="ml-auto text-xs text-surface-500">{{
+                group.templates.length
+              }}</span>
+            </label>
+            <label
+              v-for="template in group.templates"
+              :key="template.id"
+              class="flex items-center gap-3 py-1.5 pl-9 pr-3 text-sm hover:bg-surface-800"
             >
-          </label>
+              <input
+                type="checkbox"
+                :checked="growTypes.includes(template.id)"
+                @change="toggleGrowType(template.id)"
+              />
+              <span
+                class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
+                :style="{ backgroundColor: methodColor(template.method) }"
+                >{{ template.method }}</span
+              >
+              <span class="truncate font-mono text-surface-200">{{
+                displayPath(template)
+              }}</span>
+              <span
+                v-if="needsFor(template).length > 0"
+                class="ml-auto shrink-0 text-xs text-amber-400"
+                >needs {{ needsFor(template).join(", ") }}</span
+              >
+            </label>
+          </div>
         </div>
         <div
           class="flex items-center justify-between gap-2 border-t border-surface-700 pt-3 text-sm"
