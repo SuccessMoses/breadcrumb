@@ -8,7 +8,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
-import { displayPath, methodColor } from "@/requests/display";
+import { displayPath, methodColor, responseStatus } from "@/requests/display";
 import {
   DEFAULT_TREE_SETTINGS,
   loadTreeSettings,
@@ -107,6 +107,17 @@ const expandableIds = computed(() =>
 
 const collapseAll = () => {
   collapsed.value = new Set(expandableIds.value);
+};
+
+// The status code of a sequence's last request, once it has been sent
+const statusOf = (sequence: Sequence) =>
+  responseStatus(sequence.steps[sequence.steps.length - 1]?.response);
+
+const statusColor = (code: string) => {
+  if (code.startsWith("2")) return "text-green-400";
+  if (code.startsWith("3")) return "text-sky-400";
+  if (code.startsWith("4")) return "text-amber-400";
+  return "text-red-400";
 };
 
 // Highlights every sequence with no children, so the paths to them all light up
@@ -886,6 +897,12 @@ const clearHighlight = () => {
           <span class="truncate">{{
             workspace.sequencePath(row.sequence)
           }}</span>
+          <span
+            v-if="statusOf(row.sequence) !== undefined"
+            class="shrink-0 font-bold"
+            :class="statusColor(statusOf(row.sequence) ?? '')"
+            >{{ statusOf(row.sequence) }}</span
+          >
         </button>
       </div>
       <div
@@ -998,6 +1015,12 @@ const clearHighlight = () => {
               class="truncate"
               @click.stop="clickRow(row.sequence, $event)"
               >{{ workspace.sequencePath(row.sequence) }}</span
+            >
+            <span
+              v-if="statusOf(row.sequence) !== undefined"
+              class="shrink-0 font-bold"
+              :class="statusColor(statusOf(row.sequence) ?? '')"
+              >{{ statusOf(row.sequence) }}</span
             >
             <span
               v-if="!filtering && isCollapsed(row.sequence.id)"

@@ -14,3 +14,8 @@ export const methodColor = (method: string) =>
 // The path as Swagger shows it: query parameters are left out
 export const displayPath = (template: RequestTemplate) =>
   template.path.replace(/\?.*$/, "");
+
+// The status code on the first line of a raw HTTP response, such as "403"
+export const responseStatus = (
+  response: string | undefined,
+): string | undefined => /^HTTP\/\S+\s+(\d{3})/.exec(response ?? "")?.[1];
