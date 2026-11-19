@@ -2,9 +2,12 @@ import {
   Decoration,
   type DecorationSet,
   EditorView,
+  keymap,
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
+
+import { STRUCK } from "@/requests/strike";
 
 type Mark = { from: number; to: number; className: string };
 
@@ -77,6 +80,9 @@ const marksFor = (view: EditorView): Mark[] => {
     eachMatch(PLACEHOLDER, text, line.from, (start, match) =>
       add(start, start + match[0].length, "cm-http-placeholder"),
     );
+    eachMatch(STRUCK, text, line.from, (start, match) =>
+      add(start, start + match[0].length, "cm-http-struck"),
+    );
   }
 
   return marks;
@@ -143,6 +149,10 @@ const themeFor = (autoHeight: boolean) =>
       ".cm-http-string": { color: "#98c379" },
       ".cm-http-number": { color: "#d19a66" },
       ".cm-http-atom": { color: "#c678dd" },
+      ".cm-http-struck": {
+        textDecoration: "line-through",
+        color: "#6b7079",
+      },
       ".cm-http-placeholder": {
         color: "#e5c07b",
         backgroundColor: "rgba(229, 192, 123, 0.12)",
@@ -151,6 +161,33 @@ const themeFor = (autoHeight: boolean) =>
     },
     { dark: true },
   );
+
+// Ctrl+Shift+X wraps the selection in ~~ markers, or unwraps it if it already has
+// them. With no selection it applies to the whole line.
+const toggleStrike = (view: EditorView): boolean => {
+  const { state } = view;
+  const range = state.selection.main;
+  const line = state.doc.lineAt(range.head);
+  const from = range.empty ? line.from : range.from;
+  const to = range.empty ? line.to : range.to;
+  if (from === to) return false;
+
+  const text = state.sliceDoc(from, to);
+  const wrapped =
+    text.length >= 4 && text.startsWith("~~") && text.endsWith("~~");
+  view.dispatch({
+    changes: wrapped
+      ? [
+          { from, to: from + 2 },
+          { from: to - 2, to },
+        ]
+      : [
+          { from, insert: "~~" },
+          { from: to, insert: "~~" },
+        ],
+  });
+  return true;
+};
 
 export type HttpEditor = {
   setText: (text: string) => void;
@@ -172,6 +209,9 @@ export const createHttpEditor = (
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ spellcheck: "false" }),
       EditorView.editable.of(!readOnly),
+      ...(readOnly
+        ? []
+        : [keymap.of([{ key: "Mod-Shift-x", run: toggleStrike }])]),
     ],
   });
 

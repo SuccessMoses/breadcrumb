@@ -1,5 +1,7 @@
 import type { RequestTemplate } from "shared";
 
+import { stripStruck } from "./strike";
+
 const LINE_BREAK = "\r\n";
 const ABSOLUTE_URL = /^https?:\/\/([^/]+)(.*)$/;
 const RANDOM_TOKEN = /\{random\}/g;
@@ -46,6 +48,6 @@ export const defaultRequest = (template: RequestTemplate): string => {
 // Turns template text into one request. Each {random} gets its own random
 // string, so every sequence the template is rendered into gets different values.
 export const expandTemplate = (text: string): string =>
-  text
+  stripStruck(text)
     .replace(/\r?\n/g, LINE_BREAK)
     .replace(RANDOM_TOKEN, () => randomString());

@@ -20,6 +20,7 @@ import {
 
 import { displayPath } from "@/requests/display";
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
+import { stripStruck } from "@/requests/strike";
 import type { FrontendSDK } from "@/types";
 
 type Collection = { id: string; name: string };
@@ -636,7 +637,7 @@ export const createWorkspace = (
     const text = templateText(templateId);
     const sequence = state.sequences.find((s) => s.id === sequenceId);
     if (text === undefined || sequence === undefined) return [];
-    return unmetNames(text, valuesBefore(sequence.steps));
+    return unmetNames(stripStruck(text), valuesBefore(sequence.steps));
   };
 
   // Creates one child of a sequence for each rendering of the template, without
