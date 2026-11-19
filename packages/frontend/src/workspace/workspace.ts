@@ -52,6 +52,15 @@ type RenderResult =
 
 type Rendering = { sequenceId: string; stepId: string };
 
+const stepFrom = (templateId: string, result: Rendered): SequenceStep => ({
+  id: newId(),
+  templateId,
+  request: result.request,
+  response: result.response,
+  captured: result.captured,
+  choice: result.choice,
+});
+
 type SequenceRow = {
   sequence: Sequence;
   depth: number;
@@ -475,12 +484,16 @@ export const createWorkspace = (
     return template.id;
   };
 
-  // The values the steps before a step captured. Later steps win on a name.
+  // The values the steps before a step captured, per name, merged as a set in the
+  // order they were first found. A name captured by several steps has all of them.
   const valuesBefore = (steps: SequenceStep[]) =>
-    steps.reduce<Record<string, string[]>>(
-      (values, step) => ({ ...values, ...step.captured }),
-      {},
-    );
+    steps.reduce<Record<string, string[]>>((values, step) => {
+      const merged = { ...values };
+      for (const [name, found] of Object.entries(step.captured ?? {})) {
+        merged[name] = [...new Set([...(values[name] ?? []), ...found])];
+      }
+      return merged;
+    }, {});
 
   // Renders a template as the next step after the given steps: fills its
   // placeholders from them, then for each filling sends the request if the
@@ -533,27 +546,11 @@ export const createWorkspace = (
     return unmetNames(text, valuesBefore(sequence.steps));
   };
 
-  const copyCaptured = (captured: Record<string, string[]> | undefined) =>
-    captured === undefined
-      ? undefined
-      : Object.fromEntries(
-          Object.entries(captured).map(([name, found]) => [name, [...found]]),
-        );
-
-  // Copies of a sequence's steps for a child: new ids, no responses kept
-  const copySteps = (steps: SequenceStep[]): SequenceStep[] =>
-    steps.map((step) => ({
-      ...step,
-      id: newId(),
-      response: undefined,
-      captured: copyCaptured(step.captured),
-      choice: step.choice === undefined ? undefined : { ...step.choice },
-    }));
-
   // Creates one child of a sequence for each rendering of the template, without
-  // selecting them or reporting errors. Rendering stops at the first failure, so
-  // later steps never go out with a value that did not come from a successful step.
-  // A template whose value is missing creates no children.
+  // selecting them or reporting errors. Nothing is taken from the parent: every step
+  // of the sequence is rendered again from its template, in order, so each step
+  // reads the values of the steps before it in this sequence. Rendering stops at
+  // the first failure. A value that is missing creates no children.
   const extendOne = async (
     parentId: string,
     templateId: string,
@@ -566,25 +563,32 @@ export const createWorkspace = (
       return { kind: "error", message: "Missing sequence or template" };
     }
 
-    const rendered = await renderStep(templateId, parent.steps);
+    // Each step keeps the {{name|*}} value the parent had it on
+    const prefix: SequenceStep[] = [];
+    for (const inherited of parent.steps) {
+      const rendered = await renderStep(
+        inherited.templateId,
+        prefix,
+        inherited.choice,
+      );
+      if (rendered.kind === "error") return rendered;
+      const first = rendered.results[0];
+      if (first === undefined) return { kind: "ok", ids: [] };
+      prefix.push(stepFrom(inherited.templateId, first));
+    }
+
+    const rendered = await renderStep(templateId, prefix);
     if (rendered.kind === "error") return rendered;
     const ids: string[] = [];
     for (const result of rendered.results) {
-      // Each child gets its own copies, so a change to one never reaches another
+      // Each sibling has its own step records, so none is shared between sequences
       const child: Sequence = {
         id: newId(),
         name: crypto.randomUUID(),
         parentId,
         steps: [
-          ...copySteps(parent.steps),
-          {
-            id: newId(),
-            templateId,
-            request: result.request,
-            response: result.response,
-            captured: result.captured,
-            choice: result.choice,
-          },
+          ...prefix.map((step) => ({ ...step, id: newId() })),
+          stepFrom(templateId, result),
         ],
       };
       state.sequences.push(child);
