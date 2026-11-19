@@ -26,9 +26,14 @@ type Collection = { id: string; name: string };
 
 const DEFAULT_COLLECTION_ID = "default";
 
+// A tree is identified by its root sequence, which has no parent
+type Tree = { id: string; name: string };
+
 type WorkspaceState = {
   templates: RequestTemplate[];
   sequences: Sequence[];
+  trees: Tree[];
+  selectedTreeId: string | undefined;
   selectedSequenceId: string | undefined;
   texts: Record<string, string>;
   collections: Collection[];
@@ -110,6 +115,10 @@ export type Workspace = {
   missingInputs: (templateId: string, sequenceId: string) => string[];
   setRule: (templateId: string, rule: TemplateRule) => void;
   selectSequence: (id: string) => void;
+  selectTree: (id: string) => void;
+  createTree: (name: string) => void;
+  renameTree: (id: string, name: string) => void;
+  deleteTree: (id: string) => number;
   highlighted: Ref<string[]>;
   setHighlighted: (ids: string[]) => void;
   saveStepRequest: (
@@ -136,12 +145,26 @@ export type Workspace = {
 const emptyState = (): WorkspaceState => ({
   templates: [],
   sequences: [],
+  trees: [],
+  selectedTreeId: undefined,
   selectedSequenceId: undefined,
   texts: {},
   collections: [],
   templateCollection: {},
   rules: {},
 });
+
+const restoreTrees = (value: unknown): Tree[] =>
+  Array.isArray(value)
+    ? value.flatMap((item): Tree[] =>
+        hasKey(item, "id") &&
+        hasKey(item, "name") &&
+        typeof item.id === "string" &&
+        typeof item.name === "string"
+          ? [{ id: item.id, name: item.name }]
+          : [],
+      )
+    : [];
 
 const isState = (value: unknown): value is WorkspaceState =>
   typeof value === "object" &&
@@ -340,6 +363,14 @@ export const createWorkspace = (
   if (isState(stored)) {
     state.templates = stored.templates;
     state.sequences = restoreSequences(stored.sequences, stored.templates);
+    state.trees = restoreTrees(
+      hasKey(stored, "trees") ? stored.trees : undefined,
+    );
+    state.selectedTreeId =
+      hasKey(stored, "selectedTreeId") &&
+      typeof stored.selectedTreeId === "string"
+        ? stored.selectedTreeId
+        : undefined;
     state.selectedSequenceId =
       hasKey(stored, "selectedSequenceId") &&
       typeof stored.selectedSequenceId === "string"
@@ -380,6 +411,8 @@ export const createWorkspace = (
         [projectId]: {
           templates: state.templates,
           sequences: state.sequences,
+          trees: state.trees,
+          selectedTreeId: state.selectedTreeId,
           selectedSequenceId: state.selectedSequenceId,
           texts: state.texts,
           collections: state.collections,
@@ -393,6 +426,7 @@ export const createWorkspace = (
     () => [
       state.templates,
       state.sequences,
+      state.trees,
       state.texts,
       state.collections,
       state.templateCollection,
@@ -405,37 +439,60 @@ export const createWorkspace = (
     { deep: true },
   );
 
-  const ensureRoot = () => {
+  // Every sequence below a root, the root included
+  const treeMembers = (rootId: string): Set<string> => {
+    const childrenOf = new Map<string, string[]>();
+    for (const sequence of state.sequences) {
+      if (sequence.parentId === undefined) continue;
+      const siblings = childrenOf.get(sequence.parentId) ?? [];
+      siblings.push(sequence.id);
+      childrenOf.set(sequence.parentId, siblings);
+    }
+    const members = new Set<string>();
+    const stack = [rootId];
+    while (stack.length > 0) {
+      const id = stack.pop();
+      if (id === undefined || members.has(id)) continue;
+      members.add(id);
+      stack.push(...(childrenOf.get(id) ?? []));
+    }
+    return members;
+  };
+
+  // Each parentless sequence is the root of one tree. A tree without a name
+  // entry gets one, and an entry whose root is gone is dropped.
+  const ensureTrees = () => {
     const roots = state.sequences.filter((s) => s.parentId === undefined);
-    const empties = roots.filter((s) => s.steps.length === 0);
-    const root: Sequence = empties.find((s) => s.name === ROOT_NAME) ??
-      empties[0] ?? {
+    if (roots.length === 0) {
+      state.sequences.push({
         id: newId(),
         name: ROOT_NAME,
         parentId: undefined,
         steps: [],
-      };
-    root.name = ROOT_NAME;
-    if (!state.sequences.includes(root)) state.sequences.push(root);
-    for (const sequence of roots) {
-      if (sequence === root) continue;
-      if (sequence.steps.length === 0) {
-        // Only one empty sequence may sit at the top: drop the extra one and
-        // keep its children under the root.
-        for (const child of state.sequences) {
-          if (child.parentId === sequence.id) child.parentId = root.id;
-        }
-        state.sequences.splice(state.sequences.indexOf(sequence), 1);
-        continue;
-      }
-      sequence.parentId = root.id;
+      });
     }
-    const selected = state.sequences.some(
-      (s) => s.id === state.selectedSequenceId,
+    for (const root of state.sequences) {
+      if (root.parentId === undefined) root.name = ROOT_NAME;
+    }
+    const rootIds = new Set(
+      state.sequences.filter((s) => s.parentId === undefined).map((s) => s.id),
     );
-    if (!selected) state.selectedSequenceId = root.id;
+    const trees = state.trees.filter((tree) => rootIds.has(tree.id));
+    for (const id of rootIds) {
+      if (!trees.some((tree) => tree.id === id)) {
+        trees.push({ id, name: `Tree ${trees.length + 1}` });
+      }
+    }
+    state.trees = trees;
+    if (!trees.some((tree) => tree.id === state.selectedTreeId)) {
+      state.selectedTreeId = trees[0]?.id;
+    }
+    const inTree =
+      state.selectedTreeId !== undefined &&
+      treeMembers(state.selectedTreeId).has(state.selectedSequenceId ?? "");
+    if (!inTree) state.selectedSequenceId = state.selectedTreeId;
   };
-  ensureRoot();
+  ensureTrees();
 
   // Name each sequence after the alias of the template that created it (its
   // last step). Names are labels only; ids are what keep sequences apart.
@@ -465,7 +522,10 @@ export const createWorkspace = (
     state.sequences.find((s) => s.id === state.selectedSequenceId),
   );
 
+  // Rows of the selected tree only: its root, then everything below it
   const rows = computed<SequenceRow[]>(() => {
+    const root = state.sequences.find((s) => s.id === state.selectedTreeId);
+    if (root === undefined) return [];
     // Children grouped once, in the order they were created
     const childrenOf = new Map<string | undefined, Sequence[]>();
     for (const sequence of state.sequences) {
@@ -481,7 +541,7 @@ export const createWorkspace = (
         { sequence, depth },
         ...walk(sequence.id, depth + 1),
       ]);
-    return walk(undefined, 0);
+    return [{ sequence: root, depth: 0 }, ...walk(root.id, 1)];
   });
 
   // Appends the templates of a spec. A template already present (same method and
@@ -711,6 +771,41 @@ export const createWorkspace = (
     return doomed.size;
   };
 
+  // Switching trees clears the highlight, which belongs to the tree it was made in
+  const selectTree = (id: string) => {
+    if (!state.trees.some((tree) => tree.id === id)) return;
+    state.selectedTreeId = id;
+    state.selectedSequenceId = id;
+    highlighted.value = [];
+  };
+
+  const createTree = (name: string) => {
+    const root: Sequence = {
+      id: newId(),
+      name: ROOT_NAME,
+      parentId: undefined,
+      steps: [],
+    };
+    state.sequences.push(root);
+    state.trees.push({ id: root.id, name });
+    selectTree(root.id);
+  };
+
+  const renameTree = (id: string, name: string) => {
+    const tree = state.trees.find((t) => t.id === id);
+    if (tree !== undefined && name.trim() !== "") tree.name = name.trim();
+  };
+
+  // The last tree cannot be deleted. Returns how many sequences were removed.
+  const deleteTree = (id: string) => {
+    if (state.trees.length <= 1) return 0;
+    const doomed = treeMembers(id);
+    state.sequences = state.sequences.filter((s) => !doomed.has(s.id));
+    state.trees = state.trees.filter((tree) => tree.id !== id);
+    if (state.selectedTreeId === id) selectTree(state.trees[0]?.id ?? "");
+    return doomed.size;
+  };
+
   // The sequences highlighted in the Tree; the Sequences tab lists them
   const highlighted = ref<string[]>([]);
   const setHighlighted = (ids: string[]) => {
@@ -885,6 +980,10 @@ export const createWorkspace = (
     setRule,
     missingInputs,
     selectSequence,
+    selectTree,
+    createTree,
+    renameTree,
+    deleteTree,
     highlighted,
     setHighlighted,
     saveStepRequest,

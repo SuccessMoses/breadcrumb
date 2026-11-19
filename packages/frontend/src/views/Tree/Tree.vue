@@ -3,6 +3,7 @@ import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
+import Select from "primevue/select";
 import type { RequestTemplate, Sequence } from "shared";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
@@ -30,6 +31,62 @@ const pattern = ref("");
 // Tree settings are kept per Caido install, not per project
 const settings = ref(loadTreeSettings(sdk));
 const settingsVisible = ref(false);
+
+// Trees: the dropdown picks the one shown; the dialog names a new or renamed one
+const currentTreeName = computed(
+  () =>
+    workspace.state.trees.find(
+      (tree) => tree.id === workspace.state.selectedTreeId,
+    )?.name ?? "",
+);
+const pickTree = (id: string | undefined) => {
+  if (id !== undefined) workspace.selectTree(id);
+};
+const treeDialogVisible = ref(false);
+const treeDialogMode = ref<"create" | "rename">("create");
+const treeName = ref("");
+const openTreeDialog = (mode: "create" | "rename") => {
+  treeDialogMode.value = mode;
+  treeName.value =
+    mode === "create"
+      ? `Tree ${workspace.state.trees.length + 1}`
+      : currentTreeName.value;
+  treeDialogVisible.value = true;
+};
+const saveTree = () => {
+  const name = treeName.value.trim();
+  if (name === "") return;
+  if (treeDialogMode.value === "create") {
+    workspace.createTree(name);
+  } else if (workspace.state.selectedTreeId !== undefined) {
+    workspace.renameTree(workspace.state.selectedTreeId, name);
+  }
+  treeDialogVisible.value = false;
+};
+const deleteCurrentTree = () => {
+  const id = workspace.state.selectedTreeId;
+  if (id === undefined) return;
+  if (workspace.state.trees.length <= 1) {
+    sdk.window.showToast("The last tree cannot be deleted", {
+      variant: "error",
+    });
+    return;
+  }
+  const confirmed = window.confirm(
+    `Delete "${currentTreeName.value}" and every sequence in it?`,
+  );
+  if (!confirmed) return;
+  const removed = workspace.deleteTree(id);
+  sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
+    variant: "success",
+  });
+};
+watch(
+  () => workspace.state.selectedTreeId,
+  () => {
+    focusId.value = undefined;
+  },
+);
 watch(settings, (value) => saveTreeSettings(sdk, value), { deep: true });
 const indent = computed(() =>
   Number.isFinite(settings.value.indent)
@@ -841,6 +898,39 @@ const clearHighlight = () => {
   <div class="h-full flex flex-col gap-3 p-3">
     <div class="flex flex-col gap-2">
       <div class="flex items-center gap-2">
+        <Select
+          :model-value="workspace.state.selectedTreeId"
+          :options="workspace.state.trees"
+          option-label="name"
+          option-value="id"
+          size="small"
+          class="w-48"
+          @update:model-value="pickTree"
+        />
+        <Button
+          label="New"
+          size="small"
+          severity="secondary"
+          icon="fas fa-plus"
+          @click="openTreeDialog('create')"
+        />
+        <Button
+          label="Rename"
+          size="small"
+          severity="secondary"
+          :disabled="workspace.state.selectedTreeId === undefined"
+          @click="openTreeDialog('rename')"
+        />
+        <Button
+          label="Delete"
+          size="small"
+          severity="danger"
+          icon="fas fa-trash"
+          :disabled="workspace.state.trees.length <= 1"
+          @click="deleteCurrentTree"
+        />
+      </div>
+      <div class="flex items-center gap-2">
         <InputText
           v-model="pattern"
           placeholder="Regex over each sequence, e.g. (?s)^POST /api/v4/users/login"
@@ -1191,6 +1281,24 @@ const clearHighlight = () => {
       </div>
     </Dialog>
 
+    <Dialog
+      v-model:visible="treeDialogVisible"
+      modal
+      :header="treeDialogMode === 'create' ? 'New tree' : 'Rename tree'"
+      :style="{ width: '22rem' }"
+    >
+      <form class="flex flex-col gap-3" @submit.prevent="saveTree">
+        <InputText v-model="treeName" size="small" autofocus />
+        <div class="flex justify-end">
+          <Button
+            type="submit"
+            label="Save"
+            size="small"
+            :disabled="treeName.trim() === ''"
+          />
+        </div>
+      </form>
+    </Dialog>
     <Dialog
       v-model:visible="settingsVisible"
       modal
