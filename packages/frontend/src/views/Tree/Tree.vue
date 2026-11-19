@@ -4,7 +4,7 @@ import ContextMenu from "primevue/contextmenu";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
 import type { RequestTemplate, Sequence } from "shared";
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
@@ -261,6 +261,69 @@ const trunkColor = (id: string) => {
 // The row highlighted in this view. Clicking elsewhere clears it; the workspace's
 // selected sequence (what the Sequences tab shows) is left alone
 const focusId = ref<string>();
+
+// The scrolling part of the list, and how far it has been scrolled
+const treeScroll = ref<HTMLElement>();
+const scrolledTo = ref(0);
+const rowPx = ref(28);
+
+const onTreeScroll = () => {
+  scrolledTo.value = treeScroll.value?.scrollTop ?? 0;
+};
+
+// Measures a row once the list changes, so the scroll arithmetic matches the rows
+watch(visibleRows, () => {
+  void nextTick(() => {
+    const row = treeScroll.value?.querySelector<HTMLElement>("[data-row-id]");
+    if (row !== null && row !== undefined) rowPx.value = row.offsetHeight;
+  });
+});
+
+// Every sequence the highlight covers: the focused row and the batch
+const highlightedIds = computed(() => {
+  const ids = new Set(selected.value);
+  if (focusId.value !== undefined) ids.add(focusId.value);
+  return [...ids];
+});
+
+// The ancestors every highlighted sequence has in common, root first. With one
+// highlighted sequence that is its own path; with several, only the shared part.
+const sharedAncestors = computed(() => {
+  const [first, ...rest] = highlightedIds.value;
+  if (first === undefined) return [];
+  let shared = ancestorsById.value.get(first) ?? [];
+  for (const id of rest) {
+    const chain = new Set(ancestorsById.value.get(id) ?? []);
+    shared = shared.filter((ancestor) => chain.has(ancestor));
+  }
+  return shared;
+});
+
+// The shared ancestors scrolled past the top of the list stay pinned above it, so
+// the path of the highlight is always readable, like a sticky scope in an editor
+const stickyRows = computed(() => {
+  const top = Math.floor(scrolledTo.value / rowPx.value);
+  return sharedAncestors.value.flatMap((id) => {
+    const index = rowIndexOf(id);
+    const row =
+      index >= 0 && index < top ? visibleRows.value[index] : undefined;
+    return row === undefined
+      ? []
+      : [{ sequence: row.sequence, depth: row.depth }];
+  });
+});
+
+// Clicking a pinned ancestor highlights it and scrolls its row to the top
+const clickSticky = (
+  row: { sequence: Sequence; depth: number },
+  event: MouseEvent,
+) => {
+  clickRow(row.sequence, event);
+  const index = rowIndexOf(row.sequence.id);
+  if (treeScroll.value !== undefined && index >= 0) {
+    treeScroll.value.scrollTop = index * rowPx.value;
+  }
+};
 
 // Batch selection. Hidden rows are dropped from it, so actions only touch what is shown.
 const selected = ref<Set<string>>(new Set());
@@ -703,90 +766,23 @@ const clearHighlight = () => {
       </details>
     </div>
 
-    <div class="flex-1 min-h-0 overflow-auto">
+    <div class="flex-1 min-h-0 flex flex-col">
       <div
-        v-if="workspace.rows.value.length === 0"
-        class="py-8 text-center text-surface-400"
+        v-if="stickyRows.length > 0"
+        class="shrink-0 border-b border-surface-700 bg-surface-900"
       >
-        <i class="fas fa-sitemap mb-2 block text-2xl" />
-        No sequences yet.
-      </div>
-      <div
-        v-else-if="visibleRows.length === 0"
-        class="py-8 text-center text-surface-400"
-      >
-        No sequences match the regex.
-      </div>
-      <button
-        v-for="row in visibleRows"
-        :key="row.sequence.id"
-        type="button"
-        class="w-full flex items-center pl-3 pr-3 text-left select-none outline-none"
-        :style="{
-          fontSize: `${fontSize}px`,
-          height: `max(1.75rem, ${fontSize * 2}px)`,
-        }"
-        :class="
-          litIds.has(row.sequence.id)
-            ? 'text-amber-200 font-bold'
-            : 'text-surface-300 hover:bg-surface-800'
-        "
-        @click="clearHighlight"
-        @contextmenu.prevent="openMenu($event, row.sequence)"
-      >
-        <!-- One lane per ancestor depth. The last lane is this row's own elbow,
-             whose stub runs on through the icon column to the text. -->
-        <span
-          v-for="(_lane, lane) in row.depth"
-          :key="lane"
-          class="relative h-full shrink-0"
-          :style="{ width: `${indent}rem` }"
+        <button
+          v-for="row in stickyRows"
+          :key="row.sequence.id"
+          type="button"
+          class="w-full flex items-center gap-2 pr-3 text-left text-surface-400 hover:text-surface-200 select-none outline-none"
+          :style="{
+            fontSize: `${fontSize}px`,
+            height: `${rowPx}px`,
+            paddingLeft: `calc(0.75rem + ${row.depth * indent}rem)`,
+          }"
+          @click="clickSticky(row, $event)"
         >
-          <template
-            v-if="lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]"
-          >
-            <span
-              class="absolute top-0 h-1/2 left-1/2 border-l"
-              :class="laneColor(row.sequence.id, lane, 'top')"
-            />
-            <span
-              class="absolute top-1/2 bottom-0 left-1/2 border-l"
-              :class="laneColor(row.sequence.id, lane, 'bottom')"
-            />
-          </template>
-          <template v-if="lane === row.depth - 1">
-            <span
-              class="absolute top-0 left-1/2 h-1/2 border-l"
-              :class="laneColor(row.sequence.id, lane, 'top')"
-            />
-            <span
-              v-if="!guideOf(row.sequence.id).last"
-              class="absolute top-1/2 bottom-0 left-1/2 border-l"
-              :class="laneColor(row.sequence.id, lane, 'bottom')"
-            />
-            <span
-              class="absolute top-1/2 left-1/2 border-t"
-              :class="
-                litIds.has(row.sequence.id)
-                  ? 'border-amber-400'
-                  : 'border-surface-600'
-              "
-              :style="{ width: `calc(${indent / 2}rem + 1rem)` }"
-            />
-          </template>
-        </span>
-        <div class="flex min-w-0 flex-1 items-center gap-2">
-          <span
-            class="relative flex h-full w-4 shrink-0 items-center justify-center"
-          >
-            <i v-if="row.depth === 0" class="fas fa-folder text-surface-500" />
-            <template v-if="!filtering && hasChildren(row.sequence.id)">
-              <span
-                class="absolute top-1/2 bottom-0 left-1/2 border-l"
-                :class="trunkColor(row.sequence.id)"
-              />
-            </template>
-          </span>
           <span
             v-if="workspace.sequenceMethod(row.sequence) !== undefined"
             class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
@@ -795,23 +791,135 @@ const clearHighlight = () => {
                 workspace.sequenceMethod(row.sequence) ?? '',
               ),
             }"
-            @click.stop="clickRow(row.sequence, $event)"
             >{{ workspace.sequenceMethod(row.sequence) }}</span
           >
-          <span class="truncate" @click.stop="clickRow(row.sequence, $event)">{{
+          <span class="truncate">{{
             workspace.sequencePath(row.sequence)
           }}</span>
-          <span
-            v-if="!filtering && isCollapsed(row.sequence.id)"
-            class="text-xs text-surface-500 whitespace-nowrap"
-          >
-            ({{ descendantCounts.get(row.sequence.id) }} hidden)
-          </span>
-          <span class="ml-auto text-xs text-surface-500">
-            {{ row.sequence.steps.length }} steps
-          </span>
+        </button>
+      </div>
+      <div
+        ref="treeScroll"
+        class="flex-1 min-h-0 overflow-auto"
+        @scroll="onTreeScroll"
+      >
+        <div
+          v-if="workspace.rows.value.length === 0"
+          class="py-8 text-center text-surface-400"
+        >
+          <i class="fas fa-sitemap mb-2 block text-2xl" />
+          No sequences yet.
         </div>
-      </button>
+        <div
+          v-else-if="visibleRows.length === 0"
+          class="py-8 text-center text-surface-400"
+        >
+          No sequences match the regex.
+        </div>
+        <button
+          v-for="row in visibleRows"
+          :key="row.sequence.id"
+          :data-row-id="row.sequence.id"
+          type="button"
+          class="w-full flex items-center pl-3 pr-3 text-left select-none outline-none"
+          :style="{
+            fontSize: `${fontSize}px`,
+            height: `max(1.75rem, ${fontSize * 2}px)`,
+          }"
+          :class="
+            litIds.has(row.sequence.id)
+              ? 'text-amber-200 font-bold'
+              : 'text-surface-300 hover:bg-surface-800'
+          "
+          @click="clearHighlight"
+          @contextmenu.prevent="openMenu($event, row.sequence)"
+        >
+          <!-- One lane per ancestor depth. The last lane is this row's own elbow,
+             whose stub runs on through the icon column to the text. -->
+          <span
+            v-for="(_lane, lane) in row.depth"
+            :key="lane"
+            class="relative h-full shrink-0"
+            :style="{ width: `${indent}rem` }"
+          >
+            <template
+              v-if="
+                lane < row.depth - 1 && guideOf(row.sequence.id).guides[lane]
+              "
+            >
+              <span
+                class="absolute top-0 h-1/2 left-1/2 border-l"
+                :class="laneColor(row.sequence.id, lane, 'top')"
+              />
+              <span
+                class="absolute top-1/2 bottom-0 left-1/2 border-l"
+                :class="laneColor(row.sequence.id, lane, 'bottom')"
+              />
+            </template>
+            <template v-if="lane === row.depth - 1">
+              <span
+                class="absolute top-0 left-1/2 h-1/2 border-l"
+                :class="laneColor(row.sequence.id, lane, 'top')"
+              />
+              <span
+                v-if="!guideOf(row.sequence.id).last"
+                class="absolute top-1/2 bottom-0 left-1/2 border-l"
+                :class="laneColor(row.sequence.id, lane, 'bottom')"
+              />
+              <span
+                class="absolute top-1/2 left-1/2 border-t"
+                :class="
+                  litIds.has(row.sequence.id)
+                    ? 'border-amber-400'
+                    : 'border-surface-600'
+                "
+                :style="{ width: `calc(${indent / 2}rem + 1rem)` }"
+              />
+            </template>
+          </span>
+          <div class="flex min-w-0 flex-1 items-center gap-2">
+            <span
+              class="relative flex h-full w-4 shrink-0 items-center justify-center"
+            >
+              <i
+                v-if="row.depth === 0"
+                class="fas fa-folder text-surface-500"
+              />
+              <template v-if="!filtering && hasChildren(row.sequence.id)">
+                <span
+                  class="absolute top-1/2 bottom-0 left-1/2 border-l"
+                  :class="trunkColor(row.sequence.id)"
+                />
+              </template>
+            </span>
+            <span
+              v-if="workspace.sequenceMethod(row.sequence) !== undefined"
+              class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
+              :style="{
+                backgroundColor: methodColor(
+                  workspace.sequenceMethod(row.sequence) ?? '',
+                ),
+              }"
+              @click.stop="clickRow(row.sequence, $event)"
+              >{{ workspace.sequenceMethod(row.sequence) }}</span
+            >
+            <span
+              class="truncate"
+              @click.stop="clickRow(row.sequence, $event)"
+              >{{ workspace.sequencePath(row.sequence) }}</span
+            >
+            <span
+              v-if="!filtering && isCollapsed(row.sequence.id)"
+              class="text-xs text-surface-500 whitespace-nowrap"
+            >
+              ({{ descendantCounts.get(row.sequence.id) }} hidden)
+            </span>
+            <span class="ml-auto text-xs text-surface-500">
+              {{ row.sequence.steps.length }} steps
+            </span>
+          </div>
+        </button>
+      </div>
     </div>
 
     <ContextMenu ref="menu" :model="menuItems" />
