@@ -12,10 +12,10 @@ import {
   type Capture,
   fillCaptures,
   NO_RULE,
-  placeholderNames,
   RESPONSE_DIVIDER,
   runCaptures,
   type TemplateRule,
+  unmetNames,
 } from "./captures";
 
 import { displayPath } from "@/requests/display";
@@ -38,14 +38,17 @@ type WorkspaceState = {
 
 // Outcome of rendering one step: its text, its response if it was sent, and
 // the values its captures produced. A failure stops the sequence it is in.
+type Rendered = {
+  request: string;
+  response: string | undefined;
+  captured: Record<string, string[]>;
+  choice: Record<string, string>;
+};
+
+// A template renders to one request per combination of its {{name|*}} values,
+// so a successful render can produce none (a value was missing) or several
 type RenderResult =
-  | {
-      kind: "ok";
-      request: string;
-      response: string | undefined;
-      captured: Record<string, string>;
-    }
-  | { kind: "error"; message: string };
+  { kind: "ok"; results: Rendered[] } | { kind: "error"; message: string };
 
 type Rendering = { sequenceId: string; stepId: string };
 
@@ -156,6 +159,32 @@ const isStep = (value: unknown): value is SequenceStep =>
   typeof value.templateId === "string" &&
   typeof value.request === "string";
 
+// Captured values were single strings before they became lists
+const restoreCaptured = (
+  value: unknown,
+): Record<string, string[]> | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([name, found]): [string, string[]][] => {
+      if (typeof found === "string") return [[name, [found]]];
+      if (Array.isArray(found)) {
+        return [
+          [name, found.filter((v): v is string => typeof v === "string")],
+        ];
+      }
+      return [];
+    }),
+  );
+};
+
+const restoreStep = (step: SequenceStep): SequenceStep => ({
+  ...step,
+  captured: restoreCaptured(step.captured),
+  choice: step.choice === undefined ? undefined : restoreStrings(step.choice),
+});
+
 const restoreStrings = (value: unknown): Record<string, string> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? Object.fromEntries(
@@ -231,7 +260,14 @@ const restoreSequences = (
       Array.isArray(value.steps) &&
       value.steps.every(isStep)
     ) {
-      return [{ id: value.id, name: value.name, parentId, steps: value.steps }];
+      return [
+        {
+          id: value.id,
+          name: value.name,
+          parentId,
+          steps: value.steps.map(restoreStep),
+        },
+      ];
     }
     if (hasKey(value, "templateIds") && Array.isArray(value.templateIds)) {
       const steps = value.templateIds.flatMap((templateId): SequenceStep[] => {
@@ -441,56 +477,88 @@ export const createWorkspace = (
 
   // The values the steps before a step captured. Later steps win on a name.
   const valuesBefore = (steps: SequenceStep[]) =>
-    steps.reduce<Record<string, string>>(
+    steps.reduce<Record<string, string[]>>(
       (values, step) => ({ ...values, ...step.captured }),
       {},
     );
 
-  // Renders a template as the next step after the given steps: fills {{name}}
-  // from them, sends the request if the template says so, then runs its
-  // captures over the request (and response, if sent).
+  // Renders a template as the next step after the given steps: fills its
+  // placeholders from them, then for each filling sends the request if the
+  // template says so and runs its captures over the request (and response).
   const renderStep = async (
     templateId: string,
     before: SequenceStep[],
+    fixed: Record<string, string> = {},
   ): Promise<RenderResult> => {
     const text = templateText(templateId);
     if (text === undefined)
       return { kind: "error", message: "Missing template" };
-    const request = fillCaptures(expandTemplate(text), valuesBefore(before));
+    const fillings = fillCaptures(
+      expandTemplate(text),
+      valuesBefore(before),
+      fixed,
+    );
     const rule = state.rules[templateId] ?? NO_RULE;
 
-    let response: string | undefined;
-    if (rule.sendOnRender) {
-      const sent = await sdk.backend.sendRaw(request);
-      if (sent.kind === "Error") return { kind: "error", message: sent.error };
-      response = sent.value;
-    }
+    const results: Rendered[] = [];
+    for (const filling of fillings) {
+      let response: string | undefined;
+      if (rule.sendOnRender) {
+        const sent = await sdk.backend.sendRaw(filling.request);
+        if (sent.kind === "Error")
+          return { kind: "error", message: sent.error };
+        response = sent.value;
+      }
 
-    const subject =
-      response === undefined ? request : request + RESPONSE_DIVIDER + response;
-    const result = runCaptures(rule.captures, subject);
-    if (result.kind === "error") return result;
-    return { kind: "ok", request, response, captured: result.values };
+      const subject =
+        response === undefined
+          ? filling.request
+          : filling.request + RESPONSE_DIVIDER + response;
+      const result = runCaptures(rule.captures, subject);
+      if (result.kind === "error") return result;
+      results.push({
+        request: filling.request,
+        response,
+        captured: result.values,
+        choice: filling.choice,
+      });
+    }
+    return { kind: "ok", results };
   };
 
   const missingInputs = (templateId: string, sequenceId: string) => {
     const text = templateText(templateId);
     const sequence = state.sequences.find((s) => s.id === sequenceId);
     if (text === undefined || sequence === undefined) return [];
-    const available = valuesBefore(sequence.steps);
-    return placeholderNames(text).filter(
-      (name) => !Object.hasOwn(available, name),
-    );
+    return unmetNames(text, valuesBefore(sequence.steps));
   };
 
-  // Creates one child of a sequence, without selecting it or reporting errors.
-  // Rendering stops at the first failure, so later steps never go out with a
-  // value that did not come from a successful step.
+  const copyCaptured = (captured: Record<string, string[]> | undefined) =>
+    captured === undefined
+      ? undefined
+      : Object.fromEntries(
+          Object.entries(captured).map(([name, found]) => [name, [...found]]),
+        );
+
+  // Copies of a sequence's steps for a child: new ids, no responses kept
+  const copySteps = (steps: SequenceStep[]): SequenceStep[] =>
+    steps.map((step) => ({
+      ...step,
+      id: newId(),
+      response: undefined,
+      captured: copyCaptured(step.captured),
+      choice: step.choice === undefined ? undefined : { ...step.choice },
+    }));
+
+  // Creates one child of a sequence for each rendering of the template, without
+  // selecting them or reporting errors. Rendering stops at the first failure, so
+  // later steps never go out with a value that did not come from a successful step.
+  // A template whose value is missing creates no children.
   const extendOne = async (
     parentId: string,
     templateId: string,
   ): Promise<
-    { kind: "ok"; id: string } | { kind: "error"; message: string }
+    { kind: "ok"; ids: string[] } | { kind: "error"; message: string }
   > => {
     const parent = state.sequences.find((s) => s.id === parentId);
     const template = templatesById.value.get(templateId);
@@ -498,30 +566,31 @@ export const createWorkspace = (
       return { kind: "error", message: "Missing sequence or template" };
     }
 
-    // Copies share no objects with the parent, so a change to one never reaches the other
-    const inherited: SequenceStep[] = parent.steps.map((step) => ({
-      ...step,
-      id: newId(),
-      response: undefined,
-      captured: step.captured === undefined ? undefined : { ...step.captured },
-    }));
-    const rendered = await renderStep(templateId, inherited);
+    const rendered = await renderStep(templateId, parent.steps);
     if (rendered.kind === "error") return rendered;
-    const step: SequenceStep = {
-      id: newId(),
-      templateId,
-      request: rendered.request,
-      response: rendered.response,
-      captured: rendered.captured,
-    };
-    const child: Sequence = {
-      id: newId(),
-      name: crypto.randomUUID(),
-      parentId,
-      steps: [...inherited, step],
-    };
-    state.sequences.push(child);
-    return { kind: "ok", id: child.id };
+    const ids: string[] = [];
+    for (const result of rendered.results) {
+      // Each child gets its own copies, so a change to one never reaches another
+      const child: Sequence = {
+        id: newId(),
+        name: crypto.randomUUID(),
+        parentId,
+        steps: [
+          ...copySteps(parent.steps),
+          {
+            id: newId(),
+            templateId,
+            request: result.request,
+            response: result.response,
+            captured: result.captured,
+            choice: result.choice,
+          },
+        ],
+      };
+      state.sequences.push(child);
+      ids.push(child.id);
+    }
+    return { kind: "ok", ids };
   };
 
   // Extends one sequence and selects the new child. Resolves to an error message
@@ -535,7 +604,8 @@ export const createWorkspace = (
       sdk.window.showToast(result.message, { variant: "error" });
       return result.message;
     }
-    state.selectedSequenceId = result.id;
+    const last = result.ids[result.ids.length - 1];
+    if (last !== undefined) state.selectedSequenceId = last;
     return undefined;
   };
 
@@ -566,8 +636,8 @@ export const createWorkspace = (
           }
           const result = await extendOne(parentId, templateId);
           if (result.kind === "ok") {
-            next.push(result.id);
-            created += 1;
+            next.push(...result.ids);
+            created += result.ids.length;
           } else {
             pruned += 1;
           }
@@ -640,17 +710,25 @@ export const createWorkspace = (
       let changed = false;
       for (const [index, step] of sequence.steps.entries()) {
         if (!templatesById.value.has(step.templateId)) continue;
+        // The step keeps the {{name|*}} values it was rendered with
         const rendered = await renderStep(
           step.templateId,
           sequence.steps.slice(0, index),
+          step.choice,
         );
         if (rendered.kind === "error") {
           sdk.window.showToast(rendered.message, { variant: "error" });
           return { sequences, steps, error: rendered.message };
         }
-        step.request = rendered.request;
-        step.response = rendered.response;
-        step.captured = rendered.captured;
+        const [first] = rendered.results;
+        if (first === undefined) {
+          const message = "A value this step needs is missing";
+          sdk.window.showToast(message, { variant: "error" });
+          return { sequences, steps, error: message };
+        }
+        step.request = first.request;
+        step.response = first.response;
+        step.captured = first.captured;
         steps += 1;
         changed = true;
       }

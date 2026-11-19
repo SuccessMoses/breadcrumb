@@ -49,7 +49,7 @@ const toCrlf = (text: string) => text.replace(/\r?\n/g, "\r\n");
 // Values a step's captures produced, shown on its header so a run can be followed
 const capturedOf = (step: SequenceStep) =>
   Object.entries(step.captured ?? {})
-    .map(([name, value]) => `${name} = ${value}`)
+    .map(([name, values]) => `${name} = ${values.join(", ")}`)
     .join("   ");
 
 const registerRequest = (stepId: string, handle: unknown) => {
