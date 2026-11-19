@@ -587,7 +587,11 @@ const growEstimate = computed(() => {
 const openGrow = (sources: Sequence[]) => {
   if (sources.length === 0) return;
   growSources.value = sources;
-  growTypes.value = [];
+  // The picked requests stay picked between openings; only ones that no longer
+  // exist are dropped
+  growTypes.value = growTypes.value.filter((id) =>
+    workspace.templatesById.value.has(id),
+  );
   growSearch.value = "";
   growGenerations.value = 1;
   growDialog.value = true;
