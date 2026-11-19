@@ -2,4 +2,9 @@
 // out, and rendering removes it, so it stays in the template as a note.
 export const STRUCK = /~~[^\n]*?~~/g;
 
-export const stripStruck = (text: string): string => text.replace(STRUCK, "");
+// A line holding only struck text is removed with its line break, so it leaves
+// no blank line behind
+const STRUCK_LINE = /^[ \t]*~~[^\n]*?~~[ \t]*(?:\r?\n|$)/gm;
+
+export const stripStruck = (text: string): string =>
+  text.replace(STRUCK_LINE, "").replace(STRUCK, "");
