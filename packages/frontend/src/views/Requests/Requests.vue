@@ -340,7 +340,11 @@ onMounted(() => {
     </div>
 
     <Splitter layout="horizontal" class="flex-1 min-h-0">
-      <SplitterPanel :size="40" :min-size="20" class="flex flex-col min-h-0">
+      <SplitterPanel
+        :size="40"
+        :min-size="20"
+        class="flex flex-col min-h-0 min-w-0 overflow-hidden"
+      >
         <div class="flex items-center gap-2 pb-2">
           <InputText
             v-model="search"
