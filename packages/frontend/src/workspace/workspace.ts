@@ -69,7 +69,11 @@ export type Workspace = {
   focusTemplate: Ref<string | undefined>;
   setFocusTemplate: (templateId: string | undefined) => void;
   consumeFocusTemplate: () => string | undefined;
-  importTemplates: (templates: RequestTemplate[]) => void;
+  importTemplates: (templates: RequestTemplate[]) => {
+    added: number;
+    skipped: number;
+  };
+  addEmptyTemplate: () => string;
   // Resolves to an error message if rendering stopped, otherwise undefined
   extendSequence: (
     parentId: string,
@@ -111,7 +115,6 @@ export type Workspace = {
   moveTemplate: (templateId: string, collectionId: string) => void;
   templateText: (templateId: string) => string | undefined;
   setTemplateText: (templateId: string, text: string) => void;
-  resetTemplateText: (templateId: string) => void;
   sequenceLabel: (sequence: Sequence) => string;
   sequenceMethod: (sequence: Sequence) => string | undefined;
   sequencePath: (sequence: Sequence) => string;
@@ -403,8 +406,37 @@ export const createWorkspace = (
     return walk(undefined, 0);
   });
 
+  // Appends the templates of a spec. A template already present (same method and
+  // path) is skipped. Its request starts as the one the spec describes.
   const importTemplates = (templates: RequestTemplate[]) => {
-    state.templates = templates;
+    const known = new Set(state.templates.map((t) => t.id));
+    let added = 0;
+    for (const template of templates) {
+      if (known.has(template.id)) continue;
+      known.add(template.id);
+      state.templates.push(template);
+      state.texts[template.id] = defaultRequest(template);
+      added += 1;
+    }
+    return { added, skipped: templates.length - added };
+  };
+
+  // A new request with nothing in it, to be filled by hand
+  const addEmptyTemplate = () => {
+    const template: RequestTemplate = {
+      id: newId(),
+      method: "",
+      path: "",
+      url: "",
+      operationId: undefined,
+      summary: undefined,
+      parameters: [],
+      body: undefined,
+      auth: undefined,
+    };
+    state.templates.push(template);
+    state.texts[template.id] = "";
+    return template.id;
   };
 
   // The values the steps before a step captured. Later steps win on a name.
@@ -679,15 +711,11 @@ export const createWorkspace = (
   const templateText = (templateId: string) => {
     const template = templatesById.value.get(templateId);
     if (template === undefined) return undefined;
-    return state.texts[templateId] ?? defaultRequest(template);
+    return state.texts[templateId] ?? "";
   };
 
   const setTemplateText = (templateId: string, text: string) => {
     state.texts[templateId] = text;
-  };
-
-  const resetTemplateText = (templateId: string) => {
-    delete state.texts[templateId];
   };
 
   // The method and path of the template a sequence's last step came from
@@ -751,7 +779,7 @@ export const createWorkspace = (
     moveTemplate,
     templateText,
     setTemplateText,
-    resetTemplateText,
+    addEmptyTemplate,
     sequenceLabel,
     sequenceMethod,
     sequencePath,

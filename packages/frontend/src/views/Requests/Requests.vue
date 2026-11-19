@@ -233,11 +233,8 @@ const saveTemplateText = () => {
   sdk.window.showToast("Template saved", { variant: "success" });
 };
 
-const resetTemplateText = () => {
-  const id = selectedTemplateId.value;
-  if (id === undefined) return;
-  workspace.resetTemplateText(id);
-  showTemplateText();
+const addEmptyTemplate = () => {
+  selectedTemplateId.value = workspace.addEmptyTemplate();
 };
 
 const onFileChange = async (event: Event) => {
@@ -251,8 +248,9 @@ const onFileChange = async (event: Event) => {
     sdk.window.showToast(result.error, { variant: "error" });
     return;
   }
-  workspace.importTemplates(result.value);
-  sdk.window.showToast(`Imported ${result.value.length} request templates`, {
+  const { added, skipped } = workspace.importTemplates(result.value);
+  const kept = skipped > 0 ? `, ${skipped} already present` : "";
+  sdk.window.showToast(`Added ${added} request template(s)${kept}`, {
     variant: "success",
   });
 };
@@ -298,6 +296,13 @@ onMounted(() => {
         icon="fas fa-file-import"
         size="small"
         @click="fileInput?.click()"
+      />
+      <Button
+        icon="fas fa-plus"
+        size="small"
+        severity="secondary"
+        aria-label="New empty request"
+        @click="addEmptyTemplate"
       />
       <input
         ref="fileInput"
@@ -384,7 +389,7 @@ onMounted(() => {
                   >{{ template.method }}</span
                 >
                 <span class="font-mono truncate text-surface-200">{{
-                  displayPath(template)
+                  displayPath(template) || "(empty request)"
                 }}</span>
                 <span class="truncate text-xs text-surface-500">{{
                   template.summary
@@ -517,13 +522,6 @@ onMounted(() => {
             an earlier step of the sequence.
           </span>
           <div class="flex gap-2">
-            <Button
-              label="Reset"
-              size="small"
-              severity="secondary"
-              :disabled="selectedTemplate === undefined"
-              @click="resetTemplateText"
-            />
             <Button
               label="Save"
               size="small"
