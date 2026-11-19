@@ -257,6 +257,21 @@ const onFileChange = async (event: Event) => {
 
 watch(selectedTemplateId, showTemplateText);
 
+// The request in the editor is shown in the list: its collection is opened and its
+// row brought into view
+watch(selectedTemplateId, (id) => {
+  if (id === undefined) return;
+  const collection = workspace.collectionOf(id);
+  if (isCollapsed(collection)) {
+    collapsed.value = { ...collapsed.value, [collection]: false };
+  }
+  void nextTick(() => {
+    document
+      .querySelector(`[data-template-id="${id}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  });
+});
+
 // A step opened from the Sequences view asks for the template behind it. Clear
 // whatever would hide its row, select it, and scroll to it.
 watch(
@@ -377,7 +392,9 @@ onMounted(() => {
                 type="button"
                 class="w-full flex items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
                 :class="
-                  template.id === selectedTemplateId ? 'bg-surface-800' : ''
+                  template.id === selectedTemplateId
+                    ? 'text-amber-200 font-bold'
+                    : ''
                 "
                 @contextmenu.prevent="openMenu($event, template)"
                 @click="selectedTemplateId = template.id"
