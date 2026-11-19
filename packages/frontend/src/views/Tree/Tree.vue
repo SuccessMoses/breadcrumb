@@ -214,9 +214,7 @@ const litIds = computed(() => {
 // For each lit parent, the row of its lit child furthest down: its branch line is
 // gold down to that row and no further
 const pathEndById = computed(() => {
-  const rows = new Map(
-    visibleRows.value.map((row, index) => [row.sequence.id, index]),
-  );
+  const rows = rowIndex.value;
   const ends = new Map<string, number>();
   for (const source of litSources.value) {
     const chain = litChain(source);
@@ -230,8 +228,12 @@ const pathEndById = computed(() => {
   return ends;
 });
 
-const rowIndexOf = (id: string) =>
-  visibleRows.value.findIndex((row) => row.sequence.id === id);
+const rowIndex = computed(
+  () =>
+    new Map(visibleRows.value.map((row, index) => [row.sequence.id, index])),
+);
+
+const rowIndexOf = (id: string) => rowIndex.value.get(id) ?? -1;
 
 // A lane is the branch line of the ancestor at its depth. The top half of a row's
 // lane is gold up to and including the path child's row; the bottom half only above it

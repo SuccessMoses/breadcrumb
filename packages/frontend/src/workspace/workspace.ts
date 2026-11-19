@@ -366,23 +366,41 @@ export const createWorkspace = (
     state.collections.unshift({ id: DEFAULT_COLLECTION_ID, name: "Default" });
   }
 
+  // Saves the project after a short pause, so a burst of changes (such as a Grow
+  // creating many sequences) is written once. Selection changes are not saved on
+  // their own; the selection goes with the next save.
+  let saveTimer: number | undefined;
+  const save = () => {
+    const current = readRoot(sdk);
+    // Keep the other keys (such as settings) that share the storage root
+    sdk.storage.set({
+      ...current,
+      projects: {
+        ...readProjects(current),
+        [projectId]: {
+          templates: state.templates,
+          sequences: state.sequences,
+          selectedSequenceId: state.selectedSequenceId,
+          texts: state.texts,
+          collections: state.collections,
+          templateCollection: state.templateCollection,
+          rules: state.rules,
+        },
+      },
+    });
+  };
   watch(
-    () => ({
-      templates: state.templates,
-      sequences: state.sequences,
-      selectedSequenceId: state.selectedSequenceId,
-      texts: state.texts,
-      collections: state.collections,
-      templateCollection: state.templateCollection,
-      rules: state.rules,
-    }),
-    (snapshot) => {
-      const current = readRoot(sdk);
-      // Keep the other keys (such as settings) that share the storage root
-      sdk.storage.set({
-        ...current,
-        projects: { ...readProjects(current), [projectId]: snapshot },
-      });
+    () => [
+      state.templates,
+      state.sequences,
+      state.texts,
+      state.collections,
+      state.templateCollection,
+      state.rules,
+    ],
+    () => {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(save, 300);
     },
     { deep: true },
   );
@@ -441,13 +459,21 @@ export const createWorkspace = (
   );
 
   const rows = computed<SequenceRow[]>(() => {
+    // Children grouped once, in the order they were created
+    const childrenOf = new Map<string | undefined, Sequence[]>();
+    for (const sequence of state.sequences) {
+      const siblings = childrenOf.get(sequence.parentId);
+      if (siblings === undefined) {
+        childrenOf.set(sequence.parentId, [sequence]);
+      } else {
+        siblings.push(sequence);
+      }
+    }
     const walk = (parentId: string | undefined, depth: number): SequenceRow[] =>
-      state.sequences
-        .filter((s) => s.parentId === parentId)
-        .flatMap((sequence) => [
-          { sequence, depth },
-          ...walk(sequence.id, depth + 1),
-        ]);
+      (childrenOf.get(parentId) ?? []).flatMap((sequence) => [
+        { sequence, depth },
+        ...walk(sequence.id, depth + 1),
+      ]);
     return walk(undefined, 0);
   });
 
