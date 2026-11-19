@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# Concatenates every text file under the current directory (node_modules,
-# config and package JSON included) into source_dump.txt. Skips .git, binary
-# files and the dump itself. Run it from the project root.
+# Concatenates the project's text files into source_dump.txt. Skips every node_modules,
+# .git, JSON files (config and package.json), binary files and the dump itself.
+# Run it from the project root.
 set -euo pipefail
 
 out="source_dump.txt"
 : > "$out"
 
-find . -path ./.git -prune -o -path "./$out" -prune -o -type f -print0 \
+find . \( -name .git -o -name node_modules -o -path "./$out" \) -prune -o \
+  -type f ! -name '*.json' -print0 \
   | sort -z \
   | while IFS= read -r -d '' file; do
       # grep -I skips binary files; empty files have no line to match
