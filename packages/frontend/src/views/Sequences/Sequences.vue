@@ -6,6 +6,7 @@ import { computed, nextTick, ref, watch } from "vue";
 import StepEditor from "./StepEditor.vue";
 
 import { useSDK } from "@/plugins/sdk";
+import { sendToReplay } from "@/requests/replay";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
@@ -123,6 +124,17 @@ const sendStep = () => {
   if (step !== undefined) void sendSteps([step]);
 };
 
+// Opens the selected step as a Replay session, so it can be edited and resent there
+const replayStep = async () => {
+  saveEdits();
+  const step = selectedStep.value;
+  if (step === undefined) return;
+  const error = await sendToReplay(sdk, toCrlf(step.request));
+  if (error !== undefined) {
+    sdk.window.showToast(error, { variant: "error" });
+  }
+};
+
 // Selects a step and brings its request and response into view
 const jumpTo = (stepId: string) => {
   selectedStepId.value = stepId;
@@ -222,6 +234,14 @@ watch(
         severity="secondary"
         :disabled="selectedStep === undefined || sending"
         @click="sendStep"
+      />
+      <Button
+        label="Send to Replay"
+        size="small"
+        severity="secondary"
+        icon="fas fa-arrow-up-right-from-square"
+        :disabled="selectedStep === undefined"
+        @click="replayStep"
       />
     </div>
 
