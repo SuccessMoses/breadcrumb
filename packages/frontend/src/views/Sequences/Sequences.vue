@@ -141,6 +141,27 @@ const openTemplate = (step: SequenceStep) => {
   emit("openTemplate", step.templateId);
 };
 
+// Deletes the shown sequence and everything under it; the root cannot be deleted
+const deleteShown = () => {
+  const sequence = shown.value;
+  if (sequence === undefined || sequence.parentId === undefined) return;
+  const confirmed = window.confirm(
+    `Delete "${workspace.sequenceLabel(sequence)}" and every sequence under it?`,
+  );
+  if (!confirmed) return;
+  const removed = workspace.deleteSequence(sequence.id);
+  // Drop what no longer exists from the list, and show what is left
+  workspace.setHighlighted(
+    workspace.highlighted.value.filter((id) =>
+      workspace.state.sequences.some((s) => s.id === id),
+    ),
+  );
+  shownId.value = undefined;
+  sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
+    variant: "success",
+  });
+};
+
 // Renaming edits a sequence's own name; the root keeps its name
 const startRename = (sequence: Sequence) => {
   if (sequence.parentId === undefined) return;
@@ -199,6 +220,14 @@ watch(
 <template>
   <div class="h-full flex flex-col gap-3 p-3">
     <div class="flex justify-end gap-2">
+      <Button
+        label="Delete"
+        size="small"
+        severity="danger"
+        icon="fas fa-trash"
+        :disabled="shown === undefined || shown.parentId === undefined"
+        @click="deleteShown"
+      />
       <Button
         label="Rerender"
         size="small"
