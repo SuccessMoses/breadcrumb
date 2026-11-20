@@ -393,14 +393,12 @@ watch(
               step.response === undefined ? "Response (not sent)" : "Response"
             }}
           </div>
-          <div class="max-h-96 overflow-auto">
-            <StepEditor
-              :ref="(element) => registerResponse(step.id, element)"
-              :text="step.response ?? ''"
-              :read-only="true"
-              @select="highlightMatches"
-            />
-          </div>
+          <StepEditor
+            :ref="(element) => registerResponse(step.id, element)"
+            :text="step.response ?? ''"
+            :read-only="true"
+            @select="highlightMatches"
+          />
         </section>
       </div>
     </div>
