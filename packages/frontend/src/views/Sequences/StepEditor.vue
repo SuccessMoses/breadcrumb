@@ -7,12 +7,16 @@ import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
 // its text; the parent decides whether the text is read-only.
 const { text, readOnly } = defineProps<{ text: string; readOnly: boolean }>();
 
+const emit = defineEmits<{ select: [text: string | undefined] }>();
+
 const host = ref<HTMLElement>();
 let editor: HttpEditor | undefined;
 
 onMounted(() => {
   if (host.value === undefined) return;
-  editor = createHttpEditor(host.value, readOnly, true);
+  editor = createHttpEditor(host.value, readOnly, true, undefined, (text) =>
+    emit("select", text),
+  );
   editor.setText(text);
 });
 
@@ -36,7 +40,10 @@ watch(
 );
 
 // The text as it is in the editor, for saving edits
-defineExpose({ getText: () => editor?.getText() ?? text });
+defineExpose({
+  getText: () => editor?.getText() ?? text,
+  highlight: (matching: string | undefined) => editor?.highlight(matching),
+});
 </script>
 
 <template>

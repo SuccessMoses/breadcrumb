@@ -6,7 +6,7 @@ import {
   search,
   searchPanelOpen,
 } from "@codemirror/search";
-import { EditorState } from "@codemirror/state";
+import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -168,6 +168,10 @@ const themeFor = (autoHeight: boolean) =>
       ".cm-http-atom": { color: "#c678dd" },
       ".cm-http-comment": { color: "#6a9955" },
       ".cm-http-command": { color: "#f0a048", fontWeight: "600" },
+      ".cm-http-match": {
+        backgroundColor: "rgba(240, 160, 72, 0.22)",
+        outline: "1px solid rgba(240, 160, 72, 0.55)",
+      },
       ".cm-http-struck": {
         textDecoration: "line-through",
         color: "#6b7079",
@@ -293,8 +297,48 @@ const problemBar = (parent: HTMLElement, view: EditorView) => {
 export type HttpEditor = {
   setText: (text: string) => void;
   getText: () => string;
+  // Marks every occurrence of the text, or clears the marks
+  highlight: (text: string | undefined) => void;
   destroy: () => void;
 };
+
+// The text of a single-line selection, or undefined when nothing usable is selected
+const selectedText = (state: EditorState): string | undefined => {
+  const range = state.selection.main;
+  if (range.empty) return undefined;
+  const text = state.sliceDoc(range.from, range.to);
+  return text.includes("\n") ? undefined : text;
+};
+
+// Occurrences of the highlighted text, as marks
+const setMatches = StateEffect.define<string | undefined>();
+const matchMarks = (
+  text: string,
+  needle: string | undefined,
+): DecorationSet => {
+  if (needle === undefined || needle === "") return Decoration.none;
+  const ranges = [];
+  let at = text.indexOf(needle);
+  while (at !== -1) {
+    ranges.push(
+      Decoration.mark({ class: "cm-http-match" }).range(at, at + needle.length),
+    );
+    at = text.indexOf(needle, at + needle.length);
+  }
+  return Decoration.set(ranges);
+};
+const matchField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update: (marks, transaction) => {
+    for (const effect of transaction.effects) {
+      if (effect.is(setMatches)) {
+        return matchMarks(transaction.state.doc.toString(), effect.value);
+      }
+    }
+    return transaction.docChanged ? Decoration.none : marks;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
 
 // autoHeight sizes the editor to its text instead of filling its parent. An
 // editing editor also shows its problems in a bar under the text.
@@ -303,6 +347,7 @@ export const createHttpEditor = (
   readOnly: boolean,
   autoHeight = false,
   onChange?: (text: string) => void,
+  onSelect?: (text: string | undefined) => void,
 ): HttpEditor => {
   const editing = !readOnly;
   // Ctrl+F opens the search panel; while it is open, Up and Down move between
@@ -319,9 +364,11 @@ export const createHttpEditor = (
     },
   ]);
 
+  // Continuous step editors have no find panel: the matching text is highlighted
+  // across the sequence instead
   const extensions = [
-    search({ top: true }),
-    searching,
+    ...(autoHeight ? [] : [search({ top: true }), searching]),
+    matchField,
     themeFor(autoHeight),
     highlightPlugin,
     EditorView.lineWrapping,
@@ -339,18 +386,24 @@ export const createHttpEditor = (
       : []),
   ];
   let redraw: ((text: string) => void) | undefined;
-  if (editing) {
-    extensions.push(
-      EditorView.updateListener.of((update) => {
-        if (!update.docChanged) return;
-        const text = update.state.doc.toString();
-        redraw?.(text);
-        onChange?.(text);
-      }),
-    );
-  }
+  extensions.push(
+    EditorView.updateListener.of((update) => {
+      if (update.selectionSet) onSelect?.(selectedText(update.state));
+      if (!editing || !update.docChanged) return;
+      const text = update.state.doc.toString();
+      redraw?.(text);
+      onChange?.(text);
+    }),
+  );
 
   const view = new EditorView({ parent, extensions });
+  let alive = true;
+  // Deferred: a selection reaches here from inside an update of the editor
+  const highlight = (text: string | undefined) => {
+    queueMicrotask(() => {
+      if (alive) view.dispatch({ effects: setMatches.of(text) });
+    });
+  };
   // Text set from outside starts a fresh undo history, so Ctrl+Z cannot bring
   // back text from another template or step.
   const setText = (text: string) => {
@@ -370,6 +423,10 @@ export const createHttpEditor = (
   return {
     setText,
     getText: () => view.state.doc.toString(),
-    destroy: () => view.destroy(),
+    highlight,
+    destroy: () => {
+      alive = false;
+      view.destroy();
+    },
   };
 };

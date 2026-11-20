@@ -14,7 +14,10 @@ const emit = defineEmits<{ openTemplate: [templateId: string] }>();
 const sdk = useSDK();
 
 // What a step's request editor exposes, so its edits can be read back
-type EditorHandle = { getText: () => string };
+type EditorHandle = {
+  getText: () => string;
+  highlight: (text: string | undefined) => void;
+};
 
 const shownId = ref<string>();
 const selectedStepId = ref<string>();
@@ -52,6 +55,26 @@ const capturedOf = (step: SequenceStep) =>
   Object.entries(step.captured ?? {})
     .map(([name, values]) => `${name} = ${values.join(", ")}`)
     .join("   ");
+
+const responseEditors = new Map<string, EditorHandle>();
+const registerResponse = (stepId: string, handle: unknown) => {
+  if (handle === null || handle === undefined) {
+    responseEditors.delete(stepId);
+    return;
+  }
+  responseEditors.set(stepId, handle as EditorHandle);
+};
+
+// Marks every occurrence of selected text in the shown sequence's steps, requests
+// and responses alike. Other sequences are left alone.
+const highlightMatches = (text: string | undefined) => {
+  const sequence = shown.value;
+  if (sequence === undefined) return;
+  for (const step of sequence.steps) {
+    requestEditors.get(step.id)?.highlight(text);
+    responseEditors.get(step.id)?.highlight(text);
+  }
+};
 
 const registerRequest = (stepId: string, handle: unknown) => {
   // Vue passes null when the editor leaves the page
@@ -361,6 +384,7 @@ watch(
             :ref="(element) => registerRequest(step.id, element)"
             :text="shownText(step)"
             :read-only="false"
+            @select="highlightMatches"
           />
           <div
             class="border-t border-surface-700 bg-surface-900 px-3 py-1 text-xs text-surface-500"
@@ -370,7 +394,12 @@ watch(
             }}
           </div>
           <div class="max-h-96 overflow-auto">
-            <StepEditor :text="step.response ?? ''" :read-only="true" />
+            <StepEditor
+              :ref="(element) => registerResponse(step.id, element)"
+              :text="step.response ?? ''"
+              :read-only="true"
+              @select="highlightMatches"
+            />
           </div>
         </section>
       </div>
