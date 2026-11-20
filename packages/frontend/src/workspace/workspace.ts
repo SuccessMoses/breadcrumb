@@ -125,6 +125,7 @@ export type Workspace = {
   createTree: (name: string) => void;
   renameTree: (id: string, name: string) => void;
   deleteTree: (id: string) => number;
+  makeSubtree: (id: string) => boolean;
   highlighted: Ref<string[]>;
   setHighlighted: (ids: string[]) => void;
   saveStepRequest: (
@@ -483,13 +484,15 @@ export const createWorkspace = (
     for (const root of state.sequences) {
       if (root.parentId === undefined) root.name = ROOT_NAME;
     }
-    const rootIds = new Set(
-      state.sequences.filter((s) => s.parentId === undefined).map((s) => s.id),
-    );
-    const trees = state.trees.filter((tree) => rootIds.has(tree.id));
-    for (const id of rootIds) {
-      if (!trees.some((tree) => tree.id === id)) {
-        trees.push({ id, name: `Tree ${trees.length + 1}` });
+    // A tree's root is a parentless sequence or, for a subtree, any sequence
+    const ids = new Set(state.sequences.map((s) => s.id));
+    const trees = state.trees.filter((tree) => ids.has(tree.id));
+    for (const root of state.sequences) {
+      if (
+        root.parentId === undefined &&
+        !trees.some((tree) => tree.id === root.id)
+      ) {
+        trees.push({ id: root.id, name: `Tree ${trees.length + 1}` });
       }
     }
     state.trees = trees;
@@ -812,13 +815,28 @@ export const createWorkspace = (
   };
 
   // The last tree cannot be deleted. Returns how many sequences were removed.
+  // Deleting a subtree only removes the view: its sequences stay in the tree
+  // they belong to. Returns how many sequences were removed.
   const deleteTree = (id: string) => {
     if (state.trees.length <= 1) return 0;
-    const doomed = treeMembers(id);
+    const root = state.sequences.find((s) => s.id === id);
+    const isSubtree = root?.parentId !== undefined;
+    const doomed = isSubtree ? new Set<string>() : treeMembers(id);
     state.sequences = state.sequences.filter((s) => !doomed.has(s.id));
     state.trees = state.trees.filter((tree) => tree.id !== id);
     if (state.selectedTreeId === id) selectTree(state.trees[0]?.id ?? "");
     return doomed.size;
+  };
+
+  // A subtree is a view on a sequence and everything under it. Nothing is copied:
+  // changes made in either tree show in both. Returns false when it cannot be made.
+  const makeSubtree = (id: string): boolean => {
+    const node = state.sequences.find((s) => s.id === id);
+    if (node === undefined || node.parentId === undefined) return false;
+    if (state.trees.some((tree) => tree.id === id)) return false;
+    state.trees.push({ id, name: `Subtree ${state.trees.length + 1}` });
+    selectTree(id);
+    return true;
   };
 
   // The sequences highlighted in the Tree; the Sequences tab lists them
@@ -1012,6 +1030,7 @@ export const createWorkspace = (
     createTree,
     renameTree,
     deleteTree,
+    makeSubtree,
     highlighted,
     setHighlighted,
     setStepTemplate,

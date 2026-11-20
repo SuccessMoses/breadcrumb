@@ -72,8 +72,13 @@ const deleteCurrentTree = () => {
     });
     return;
   }
+  const isSubtree = workspace.state.sequences.some(
+    (s) => s.id === id && s.parentId !== undefined,
+  );
   const confirmed = window.confirm(
-    `Delete "${currentTreeName.value}" and every sequence in it?`,
+    isSubtree
+      ? `Remove the subtree "${currentTreeName.value}"? Its sequences stay in the main tree.`
+      : `Delete "${currentTreeName.value}" and every sequence in it?`,
   );
   if (!confirmed) return;
   const removed = workspace.deleteTree(id);
@@ -850,6 +855,16 @@ const menuItems = computed(() => {
       command: rerenderTarget,
     },
     {
+      label: "Make subtree",
+      icon: "fas fa-diagram-project",
+      disabled:
+        extendTarget.value?.parentId === undefined ||
+        workspace.state.trees.some(
+          (tree) => tree.id === extendTarget.value?.id,
+        ),
+      command: makeSubtreeTarget,
+    },
+    {
       label: "Delete",
       icon: "fas fa-trash",
       disabled: extendTarget.value?.parentId === undefined,
@@ -857,6 +872,12 @@ const menuItems = computed(() => {
     },
   ];
 });
+
+// A subtree shows the clicked sequence and everything under it, in its own tree
+const makeSubtreeTarget = () => {
+  const target = extendTarget.value;
+  if (target !== undefined) workspace.makeSubtree(target.id);
+};
 
 // Right-clicking a batch-selected row acts on the whole batch
 const menuOnBatch = ref(false);
