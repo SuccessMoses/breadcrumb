@@ -8,7 +8,7 @@ import {
 } from "@codemirror/view";
 
 import { checkHttp } from "@/requests/checkHttp";
-import { isComment, STRUCK } from "@/requests/notes";
+import { isCommand, isComment, STRUCK } from "@/requests/notes";
 
 type Mark = { from: number; to: number; className: string };
 
@@ -84,7 +84,13 @@ const marksFor = (view: EditorView): Mark[] => {
     eachMatch(STRUCK, text, line.from, (start, match) =>
       add(start, start + match[0].length, "cm-http-struck"),
     );
-    if (isComment(text)) add(line.from, line.to, "cm-http-comment");
+    if (isComment(text)) {
+      add(
+        line.from,
+        line.to,
+        isCommand(text) ? "cm-http-command" : "cm-http-comment",
+      );
+    }
   }
 
   return marks;
@@ -152,6 +158,7 @@ const themeFor = (autoHeight: boolean) =>
       ".cm-http-number": { color: "#d19a66" },
       ".cm-http-atom": { color: "#c678dd" },
       ".cm-http-comment": { color: "#6a9955" },
+      ".cm-http-command": { color: "#f0a048", fontWeight: "600" },
       ".cm-http-struck": {
         textDecoration: "line-through",
         color: "#6b7079",
@@ -286,6 +293,7 @@ export const createHttpEditor = (
   parent: HTMLElement,
   readOnly: boolean,
   autoHeight = false,
+  onChange?: (text: string) => void,
 ): HttpEditor => {
   const editing = !readOnly;
   const extensions = [
@@ -307,7 +315,10 @@ export const createHttpEditor = (
   if (editing) {
     extensions.push(
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) redraw?.(update.state.doc.toString());
+        if (!update.docChanged) return;
+        const text = update.state.doc.toString();
+        redraw?.(text);
+        onChange?.(text);
       }),
     );
   }

@@ -4,13 +4,9 @@ import { compilePattern } from "@/query/sequenceText";
 // later steps of the same sequence as {{name}}.
 export type Capture = { name: string; regex: string };
 
-export type TemplateRule = {
-  // Send the request while rendering, so captures can read the response
-  sendOnRender: boolean;
-  captures: Capture[];
-};
+export type TemplateRule = { captures: Capture[] };
 
-export const NO_RULE: TemplateRule = { sendOnRender: false, captures: [] };
+export const NO_RULE: TemplateRule = { captures: [] };
 
 // Between a step's request and its response, in the text captures run over
 export const RESPONSE_DIVIDER = "\x1e-----response-----\r\n";

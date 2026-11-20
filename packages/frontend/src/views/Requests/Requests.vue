@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import Button from "primevue/button";
-import Checkbox from "primevue/checkbox";
 import ContextMenu from "primevue/contextmenu";
 import InputText from "primevue/inputtext";
 import Splitter from "primevue/splitter";
@@ -12,6 +11,7 @@ import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
 import { parseOpenApi } from "@/openapi/parseOpenApi";
 import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
+import { sendWhenRendered } from "@/requests/notes";
 import { type Capture, NO_RULE, type TemplateRule } from "@/workspace/captures";
 import type { Workspace } from "@/workspace/workspace";
 
@@ -226,9 +226,6 @@ const updateRule = (change: (current: TemplateRule) => TemplateRule) => {
   workspace.setRule(id, change(workspace.ruleOf(id)));
 };
 
-const setSendOnRender = (value: boolean) =>
-  updateRule((current) => ({ ...current, sendOnRender: value }));
-
 const addCapture = () =>
   updateRule((current) => ({
     ...current,
@@ -261,8 +258,14 @@ const captureError = computed(() => {
   return undefined;
 });
 
+// Set by the template's own command line, see sendWhenRendered
+const sendsOnRender = computed(() => {
+  const id = selectedTemplateId.value;
+  return id !== undefined && sendWhenRendered(workspace.templateText(id) ?? "");
+});
+
 const renderLabel = computed(() =>
-  rule.value.sendOnRender
+  sendsOnRender.value
     ? `Render & send (${renderTargets.value.length})`
     : `Render on top (${renderTargets.value.length})`,
 );
@@ -277,11 +280,29 @@ const showTemplateText = () => {
   );
 };
 
-const saveTemplateText = () => {
+// Template edits are saved shortly after typing stops. A pending save is written
+// before another template is shown, so no edit is lost.
+let pending: { id: string; text: string } | undefined;
+let saveTimer: number | undefined;
+
+const flushTemplate = () => {
+  window.clearTimeout(saveTimer);
+  saveTimer = undefined;
+  if (pending === undefined) return;
+  const { id, text } = pending;
+  pending = undefined;
+  if (toLf(workspace.templateText(id) ?? "") !== toLf(text)) {
+    workspace.setTemplateText(id, toCrlf(text));
+  }
+};
+
+const onTemplateEdit = (text: string) => {
   const id = selectedTemplateId.value;
-  if (id === undefined || editor === undefined) return;
-  workspace.setTemplateText(id, toCrlf(editor.getText()));
-  sdk.window.showToast("Template saved", { variant: "success" });
+  if (id === undefined) return;
+  if (pending !== undefined && pending.id !== id) flushTemplate();
+  pending = { id, text };
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(flushTemplate, 300);
 };
 
 const addEmptyTemplate = () => {
@@ -355,7 +376,7 @@ watch(
 
 onMounted(() => {
   if (editorHost.value !== undefined) {
-    editor = createHttpEditor(editorHost.value, false);
+    editor = createHttpEditor(editorHost.value, false, false, onTemplateEdit);
     showTemplateText();
   }
 });
@@ -544,16 +565,7 @@ onMounted(() => {
         </p>
 
         <div class="flex flex-col gap-2 px-3 pb-2">
-          <div class="flex items-center justify-between gap-2 text-sm">
-            <label class="flex items-center gap-2 text-surface-300">
-              <Checkbox
-                :model-value="rule.sendOnRender"
-                binary
-                :disabled="selectedTemplate === undefined"
-                @update:model-value="setSendOnRender"
-              />
-              Send when rendered (captures can read the response)
-            </label>
+          <div class="flex items-center justify-end gap-2 text-sm">
             <Button
               label="Add capture"
               icon="fas fa-plus"
@@ -605,14 +617,6 @@ onMounted(() => {
             second, and &#123;&#123;name|*&#125;&#125; makes a sequence for each
             value.
           </span>
-          <div class="flex gap-2">
-            <Button
-              label="Save"
-              size="small"
-              :disabled="selectedTemplate === undefined"
-              @click="saveTemplateText"
-            />
-          </div>
         </div>
         <div
           ref="editorHost"

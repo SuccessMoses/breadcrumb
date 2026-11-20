@@ -19,7 +19,7 @@ import {
 } from "./captures";
 
 import { displayPath } from "@/requests/display";
-import { stripNotes } from "@/requests/notes";
+import { sendWhenRendered, stripNotes } from "@/requests/notes";
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
 
@@ -266,13 +266,11 @@ const restoreRules = (value: unknown): Record<string, TemplateRule> =>
     ? Object.fromEntries(
         Object.entries(value).flatMap(
           ([templateId, rule]): [string, TemplateRule][] =>
-            hasKey(rule, "sendOnRender") &&
-            typeof rule.sendOnRender === "boolean"
+            typeof rule === "object" && rule !== null
               ? [
                   [
                     templateId,
                     {
-                      sendOnRender: rule.sendOnRender,
                       captures: restoreCaptures(
                         hasKey(rule, "captures") ? rule.captures : undefined,
                       ),
@@ -618,7 +616,8 @@ export const createWorkspace = (
     const results: Rendered[] = [];
     for (const filling of fillings) {
       let response: string | undefined;
-      if (rule.sendOnRender) {
+      // Whether this copy of the template is sent is set by its own command line
+      if (sendWhenRendered(text)) {
         const sent = await sdk.backend.sendRaw(filling.request);
         if (sent.kind === "Error")
           return { kind: "error", message: sent.error };
