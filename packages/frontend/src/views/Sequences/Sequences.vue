@@ -164,6 +164,12 @@ const jumpTo = (stepId: string) => {
   blocks.get(stepId)?.scrollIntoView({ block: "start" });
 };
 
+// Opens a sequence in the right panel and brings one of its steps into view
+const showStep = (sequence: Sequence, stepId: string) => {
+  shownId.value = sequence.id;
+  void nextTick(() => jumpTo(stepId));
+};
+
 // Double-click opens the template a step was rendered from, landing on it in
 // the Requests view
 const openTemplate = (step: SequenceStep) => {
@@ -270,7 +276,7 @@ watch(
 
     <div class="flex-1 min-h-0 flex gap-3">
       <aside
-        class="w-64 shrink-0 overflow-auto rounded border border-surface-700"
+        class="w-[25.6rem] shrink-0 overflow-auto rounded border border-surface-700"
       >
         <div v-if="listed.length === 0" class="p-3 text-surface-400">
           Highlight sequences in the Tree tab to view them here.
@@ -295,7 +301,13 @@ watch(
           <div
             v-for="(step, index) in sequence.steps"
             :key="step.id"
-            class="truncate pl-3 pt-0.5 font-mono text-xs text-surface-400"
+            class="cursor-pointer truncate pl-3 pt-0.5 font-mono text-xs hover:text-surface-100"
+            :class="
+              step.id === selectedStepId
+                ? 'text-surface-100'
+                : 'text-surface-400'
+            "
+            @click.stop="showStep(sequence, step.id)"
           >
             {{ index + 1 }}. {{ requestLine(step.request) }}
           </div>
