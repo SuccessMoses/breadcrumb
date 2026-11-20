@@ -292,6 +292,13 @@ watch(
           <div class="text-xs text-surface-500">
             {{ sequence.steps.length }} steps
           </div>
+          <div
+            v-for="(step, index) in sequence.steps"
+            :key="step.id"
+            class="truncate pl-3 pt-0.5 font-mono text-xs text-surface-400"
+          >
+            {{ index + 1 }}. {{ requestLine(step.request) }}
+          </div>
         </div>
       </aside>
 
