@@ -31,8 +31,13 @@ const DEFAULT_COLLECTION_ID = "default";
 type Tree = { id: string; name: string };
 
 // Which items are folded shut in each view, saved with the project
-type FoldKey = "requests" | "tree" | "extend";
-type Folds = Record<FoldKey, string[]>;
+type FoldKey = "requests" | "extend";
+// Folded sequences are kept per tree: a subtree shares sequences with its main tree
+type Folds = {
+  requests: string[];
+  tree: Record<string, string[]>;
+  extend: string[];
+};
 
 type WorkspaceState = {
   folds: Folds;
@@ -144,6 +149,7 @@ export type Workspace = {
     template: string,
   ) => void;
   setFolded: (key: FoldKey, ids: string[]) => void;
+  setTreeFolded: (treeId: string, ids: string[]) => void;
   saveStepResponse: (
     sequenceId: string,
     stepId: string,
@@ -161,7 +167,7 @@ export type Workspace = {
 
 // A fresh object per workspace: shared maps would leak edits between projects
 const emptyState = (): WorkspaceState => ({
-  folds: { requests: [], tree: [], extend: [] },
+  folds: { requests: [], tree: {}, extend: [] },
   templates: [],
   sequences: [],
   trees: [],
@@ -180,9 +186,28 @@ const restoreFolds = (value: unknown): Folds => {
       ? found.filter((id): id is string => typeof id === "string")
       : [];
   };
+  const treeValue = hasKey(value, "tree") ? value.tree : undefined;
+  const tree =
+    typeof treeValue === "object" &&
+    treeValue !== null &&
+    !Array.isArray(treeValue)
+      ? Object.fromEntries(
+          Object.entries(treeValue).flatMap(
+            ([id, found]): [string, string[]][] =>
+              Array.isArray(found)
+                ? [
+                    [
+                      id,
+                      found.filter((v): v is string => typeof v === "string"),
+                    ],
+                  ]
+                : [],
+          ),
+        )
+      : {};
   return {
     requests: list("requests"),
-    tree: list("tree"),
+    tree,
     extend: list("extend"),
   };
 };
@@ -947,6 +972,13 @@ export const createWorkspace = (
     state.folds = { ...state.folds, [key]: ids };
   };
 
+  const setTreeFolded = (treeId: string, ids: string[]) => {
+    state.folds = {
+      ...state.folds,
+      tree: { ...state.folds.tree, [treeId]: ids },
+    };
+  };
+
   // Edits the template copy a step is rendered from; Rerender applies it
   const setStepTemplate = (
     sequenceId: string,
@@ -1066,6 +1098,7 @@ export const createWorkspace = (
     setHighlighted,
     setStepTemplate,
     setFolded,
+    setTreeFolded,
     saveStepRequest,
     saveStepResponse,
     collectionOf,

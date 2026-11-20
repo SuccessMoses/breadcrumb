@@ -115,8 +115,26 @@ const compiled = computed(() => {
 
 // Ids of the sequences whose children are hidden.
 // Folded sequences, remembered with the project
-const collapsed = ref<Set<string>>(new Set(workspace.state.folds.tree));
-watch(collapsed, (next) => workspace.setFolded("tree", [...next]));
+// Folded sequences, remembered per tree
+const foldedInTree = (): string[] =>
+  workspace.state.folds.tree[workspace.state.selectedTreeId ?? ""] ?? [];
+const collapsed = ref<Set<string>>(new Set(foldedInTree()));
+watch(collapsed, (next) => {
+  const treeId = workspace.state.selectedTreeId;
+  if (treeId !== undefined) workspace.setTreeFolded(treeId, [...next]);
+});
+watch(
+  () => workspace.state.selectedTreeId,
+  () => {
+    collapsed.value = new Set(foldedInTree());
+  },
+);
+
+// The name of the subtree a row starts, when that is not the tree being shown
+const subtreeName = (id: string) =>
+  workspace.state.trees.find(
+    (tree) => tree.id === id && tree.id !== workspace.state.selectedTreeId,
+  )?.name;
 
 const childCounts = computed(() => {
   const counts = new Map<string, number>();
@@ -1190,6 +1208,12 @@ const clearHighlight = () => {
               class="shrink-0 font-bold"
               :class="statusColor(statusOf(row.sequence) ?? '')"
               >{{ statusOf(row.sequence) }}</span
+            >
+            <span
+              v-if="subtreeName(row.sequence.id) !== undefined"
+              class="shrink-0 cursor-pointer rounded border border-sky-700 px-1.5 text-xs text-sky-300 hover:bg-sky-900"
+              @click.stop="workspace.selectTree(row.sequence.id)"
+              >{{ subtreeName(row.sequence.id) }}</span
             >
             <span
               v-if="!filtering && isCollapsed(row.sequence.id)"
