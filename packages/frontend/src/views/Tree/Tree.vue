@@ -114,7 +114,9 @@ const compiled = computed(() => {
 });
 
 // Ids of the sequences whose children are hidden.
-const collapsed = ref<Set<string>>(new Set());
+// Folded sequences, remembered with the project
+const collapsed = ref<Set<string>>(new Set(workspace.state.folds.tree));
+watch(collapsed, (next) => workspace.setFolded("tree", [...next]));
 
 const childCounts = computed(() => {
   const counts = new Map<string, number>();
@@ -649,7 +651,11 @@ const collectionState = (templates: RequestTemplate[]) => {
 };
 
 // Collections folded shut in the Extend list; their requests stay picked
-const collapsedCollections = ref<Set<string>>(new Set());
+// Folded collections in the Extend popup, remembered with the project
+const collapsedCollections = ref<Set<string>>(
+  new Set(workspace.state.folds.extend),
+);
+watch(collapsedCollections, (next) => workspace.setFolded("extend", [...next]));
 const toggleFolded = (id: string) => {
   const next = new Set(collapsedCollections.value);
   if (next.has(id)) next.delete(id);

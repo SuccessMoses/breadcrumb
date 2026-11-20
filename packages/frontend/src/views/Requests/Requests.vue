@@ -137,7 +137,16 @@ const fileInput = ref<HTMLInputElement>();
 const selectedTemplateId = ref<string>();
 const search = ref("");
 const newCollectionName = ref("");
-const collapsed = ref<Record<string, boolean>>({});
+// Folded collections, remembered with the project
+const collapsed = ref<Record<string, boolean>>(
+  Object.fromEntries(workspace.state.folds.requests.map((id) => [id, true])),
+);
+watch(collapsed, (value) =>
+  workspace.setFolded(
+    "requests",
+    Object.keys(value).filter((id) => value[id] === true),
+  ),
+);
 const editorHost = ref<HTMLElement>();
 let editor: HttpEditor | undefined;
 
