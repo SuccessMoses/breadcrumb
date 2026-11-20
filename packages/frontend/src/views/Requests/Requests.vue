@@ -60,30 +60,77 @@ const displayPath = (template: RequestTemplate) =>
   template.path.replace(/\?.*$/, "");
 
 const menu = ref<InstanceType<typeof ContextMenu>>();
-const menuTarget = ref<RequestTemplate>();
+// The requests the context menu acts on: the batch if the clicked one is in it
+const menuIds = ref<string[]>([]);
+
+// Batch of requests picked in the list, and the last request clicked (the start
+// of a Shift+click range)
+const picked = ref<Set<string>>(new Set());
+const anchorId = ref<string>();
 
 const moveTarget = (collectionId: string) => {
-  const template = menuTarget.value;
-  if (template !== undefined) workspace.moveTemplate(template.id, collectionId);
+  for (const id of menuIds.value) workspace.moveTemplate(id, collectionId);
 };
 
-const menuItems = computed(() => [
-  {
-    label: "Move to collection",
-    icon: "fas fa-folder",
-    items: workspace.state.collections.map((collection) => ({
-      label: collection.name,
-      disabled:
-        menuTarget.value !== undefined &&
-        workspace.collectionOf(menuTarget.value.id) === collection.id,
-      command: () => moveTarget(collection.id),
-    })),
-  },
-]);
+const menuItems = computed(() => {
+  const count = menuIds.value.length;
+  return [
+    {
+      label:
+        count > 1
+          ? `Move ${count} requests to collection`
+          : "Move to collection",
+      icon: "fas fa-folder",
+      items: workspace.state.collections.map((collection) => ({
+        label: collection.name,
+        disabled: menuIds.value.every(
+          (id) => workspace.collectionOf(id) === collection.id,
+        ),
+        command: () => moveTarget(collection.id),
+      })),
+    },
+  ];
+});
 
 const openMenu = (event: MouseEvent, template: RequestTemplate) => {
-  menuTarget.value = template;
+  menuIds.value = picked.value.has(template.id)
+    ? [...picked.value]
+    : [template.id];
   menu.value?.show(event);
+};
+
+// Requests in the order the list shows them, without the folded collections
+const visibleTemplates = computed(() =>
+  groups.value
+    .filter((group) => !isCollapsed(group.collection.id))
+    .flatMap((group) => group.templates),
+);
+
+// Ctrl+click toggles a request in the batch, Shift+click picks a range from the
+// last request clicked, and a plain click clears the batch and opens the request
+const onRowClick = (template: RequestTemplate, event: MouseEvent) => {
+  if (event.shiftKey && anchorId.value !== undefined) {
+    const ids = visibleTemplates.value.map((t) => t.id);
+    const from = ids.indexOf(anchorId.value);
+    const to = ids.indexOf(template.id);
+    if (from !== -1 && to !== -1) {
+      picked.value = new Set(
+        ids.slice(Math.min(from, to), Math.max(from, to) + 1),
+      );
+    }
+    return;
+  }
+  if (event.ctrlKey || event.metaKey) {
+    const next = new Set(picked.value);
+    if (next.has(template.id)) next.delete(template.id);
+    else next.add(template.id);
+    picked.value = next;
+    anchorId.value = template.id;
+    return;
+  }
+  picked.value = new Set();
+  anchorId.value = template.id;
+  selectedTemplateId.value = template.id;
 };
 
 const fileInput = ref<HTMLInputElement>();
@@ -407,7 +454,7 @@ onMounted(() => {
                 type="button"
                 class="w-full flex items-center gap-3 px-3 py-1.5 text-left text-sm hover:bg-surface-800"
                 @contextmenu.prevent="openMenu($event, template)"
-                @click="selectedTemplateId = template.id"
+                @click="onRowClick(template, $event)"
                 @dblclick="openRendering(template.id)"
               >
                 <span
@@ -418,7 +465,8 @@ onMounted(() => {
                 <span
                   class="font-mono truncate"
                   :class="
-                    template.id === selectedTemplateId
+                    template.id === selectedTemplateId ||
+                    picked.has(template.id)
                       ? 'text-amber-200 font-bold'
                       : 'text-surface-200'
                   "
