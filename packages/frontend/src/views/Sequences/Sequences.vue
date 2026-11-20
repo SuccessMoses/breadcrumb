@@ -70,16 +70,39 @@ const registerBlock = (stepId: string, element: unknown) => {
   }
 };
 
-// Saves what is on screen in every request, so sending uses the edited text
+// Steps whose editor shows their template copy rather than the rendered request
+const templateView = ref<Set<string>>(new Set());
+
+// The text a step's editor shows: its template copy or its rendered request
+const shownText = (step: SequenceStep) =>
+  templateView.value.has(step.id)
+    ? (step.template ?? workspace.templateText(step.templateId) ?? "")
+    : step.request;
+
+// Saves what is on screen in every step, so sending uses the edited text
 const saveEdits = () => {
   const sequence = shown.value;
   if (sequence === undefined) return;
   for (const step of sequence.steps) {
     const editor = requestEditors.get(step.id);
-    if (editor !== undefined) {
-      workspace.saveStepRequest(sequence.id, step.id, toCrlf(editor.getText()));
+    if (editor === undefined) continue;
+    const text = toCrlf(editor.getText());
+    if (templateView.value.has(step.id)) {
+      workspace.setStepTemplate(sequence.id, step.id, text);
+    } else {
+      workspace.saveStepRequest(sequence.id, step.id, text);
     }
   }
+};
+
+// Switches a step between its rendered request and its template copy. What is on
+// screen is saved first, so nothing typed is lost.
+const toggleView = (step: SequenceStep) => {
+  saveEdits();
+  const next = new Set(templateView.value);
+  if (next.has(step.id)) next.delete(step.id);
+  else next.add(step.id);
+  templateView.value = next;
 };
 
 const sendSteps = async (targets: SequenceStep[]) => {
@@ -299,8 +322,15 @@ watch(
           >
             <span class="text-surface-500">{{ index + 1 }}</span>
             <span class="min-w-0 truncate font-mono text-surface-200">{{
-              requestLine(step.request)
+              requestLine(shownText(step))
             }}</span>
+            <button
+              type="button"
+              class="shrink-0 rounded border border-surface-600 px-1.5 text-xs text-surface-300 hover:bg-surface-700"
+              @click.stop="toggleView(step)"
+            >
+              {{ templateView.has(step.id) ? "Rendered" : "Template" }}
+            </button>
             <span
               v-if="capturedOf(step) !== ''"
               class="ml-auto min-w-0 truncate font-mono text-xs text-surface-500"
@@ -310,7 +340,7 @@ watch(
           </header>
           <StepEditor
             :ref="(element) => registerRequest(step.id, element)"
-            :text="step.request"
+            :text="shownText(step)"
             :read-only="false"
           />
           <div

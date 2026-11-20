@@ -58,9 +58,14 @@ type RenderResult =
 
 type Rendering = { sequenceId: string; stepId: string };
 
-const stepFrom = (templateId: string, result: Rendered): SequenceStep => ({
+const stepFrom = (
+  templateId: string,
+  template: string,
+  result: Rendered,
+): SequenceStep => ({
   id: newId(),
   templateId,
+  template,
   request: result.request,
   response: result.response,
   captured: result.captured,
@@ -126,6 +131,11 @@ export type Workspace = {
     sequenceId: string,
     stepId: string,
     request: string,
+  ) => void;
+  setStepTemplate: (
+    sequenceId: string,
+    stepId: string,
+    template: string,
   ) => void;
   saveStepResponse: (
     sequenceId: string,
@@ -593,13 +603,11 @@ export const createWorkspace = (
   // placeholders from them, then for each filling sends the request if the
   // template says so and runs its captures over the request (and response).
   const renderStep = async (
+    text: string,
     templateId: string,
     before: SequenceStep[],
     fixed: Record<string, string> = {},
   ): Promise<RenderResult> => {
-    const text = templateText(templateId);
-    if (text === undefined)
-      return { kind: "error", message: "Missing template" };
     const fillings = fillCaptures(
       expandTemplate(text),
       valuesBefore(before),
@@ -660,7 +668,11 @@ export const createWorkspace = (
     // Each step keeps the {{name|*}} value the parent had it on
     const prefix: SequenceStep[] = [];
     for (const inherited of parent.steps) {
+      const text = inherited.template ?? templateText(inherited.templateId);
+      if (text === undefined)
+        return { kind: "error", message: "Missing template" };
       const rendered = await renderStep(
+        text,
         inherited.templateId,
         prefix,
         inherited.choice,
@@ -668,10 +680,13 @@ export const createWorkspace = (
       if (rendered.kind === "error") return rendered;
       const first = rendered.results[0];
       if (first === undefined) return { kind: "ok", ids: [] };
-      prefix.push(stepFrom(inherited.templateId, first));
+      prefix.push(stepFrom(inherited.templateId, text, first));
     }
 
-    const rendered = await renderStep(templateId, prefix);
+    const text = templateText(templateId);
+    if (text === undefined)
+      return { kind: "error", message: "Missing template" };
+    const rendered = await renderStep(text, templateId, prefix);
     if (rendered.kind === "error") return rendered;
     const ids: string[] = [];
     for (const result of rendered.results) {
@@ -682,7 +697,7 @@ export const createWorkspace = (
         parentId,
         steps: [
           ...prefix.map((step) => ({ ...step, id: newId() })),
-          stepFrom(templateId, result),
+          stepFrom(templateId, text, result),
         ],
       };
       state.sequences.push(child);
@@ -842,9 +857,12 @@ export const createWorkspace = (
       if (!targets.has(sequence.id)) continue;
       let changed = false;
       for (const [index, step] of sequence.steps.entries()) {
-        if (!templatesById.value.has(step.templateId)) continue;
+        // Each step renders its own copy of the template, not the request template
+        const text = step.template ?? templateText(step.templateId);
+        if (text === undefined) continue;
         // The step keeps the {{name|*}} values it was rendered with
         const rendered = await renderStep(
+          text,
           step.templateId,
           sequence.steps.slice(0, index),
           step.choice,
@@ -880,6 +898,16 @@ export const createWorkspace = (
     state.sequences
       .find((s) => s.id === sequenceId)
       ?.steps.find((s) => s.id === stepId);
+
+  // Edits the template copy a step is rendered from; Rerender applies it
+  const setStepTemplate = (
+    sequenceId: string,
+    stepId: string,
+    template: string,
+  ) => {
+    const step = findStep(sequenceId, stepId);
+    if (step !== undefined) step.template = template;
+  };
 
   const saveStepRequest = (
     sequenceId: string,
@@ -987,6 +1015,7 @@ export const createWorkspace = (
     deleteTree,
     highlighted,
     setHighlighted,
+    setStepTemplate,
     saveStepRequest,
     saveStepResponse,
     collectionOf,
