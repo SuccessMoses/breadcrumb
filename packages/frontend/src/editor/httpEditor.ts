@@ -1,4 +1,11 @@
 import {
+  findNext,
+  findPrevious,
+  openSearchPanel,
+  search,
+  searchPanelOpen,
+} from "@codemirror/search";
+import {
   Decoration,
   type DecorationSet,
   EditorView,
@@ -296,7 +303,23 @@ export const createHttpEditor = (
   onChange?: (text: string) => void,
 ): HttpEditor => {
   const editing = !readOnly;
+  // Ctrl+F opens the search panel; while it is open, Up and Down move between
+  // matches. Enter and Shift+Enter in the panel do the same.
+  const searching = keymap.of([
+    { key: "Mod-f", run: openSearchPanel },
+    {
+      key: "ArrowDown",
+      run: (view) => searchPanelOpen(view.state) && findNext(view),
+    },
+    {
+      key: "ArrowUp",
+      run: (view) => searchPanelOpen(view.state) && findPrevious(view),
+    },
+  ]);
+
   const extensions = [
+    search({ top: true }),
+    searching,
     themeFor(autoHeight),
     highlightPlugin,
     EditorView.lineWrapping,
