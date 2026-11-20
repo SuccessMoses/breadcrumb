@@ -643,6 +643,15 @@ const collectionState = (templates: RequestTemplate[]) => {
   return picked === templates.length ? "all" : "some";
 };
 
+// Collections folded shut in the Extend list; their requests stay picked
+const collapsedCollections = ref<Set<string>>(new Set());
+const toggleFolded = (id: string) => {
+  const next = new Set(collapsedCollections.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  collapsedCollections.value = next;
+};
+
 // Picks every template of a collection, or clears them if all are picked
 const toggleCollection = (templates: RequestTemplate[]) => {
   const ids = templates.map((template) => template.id);
@@ -1214,47 +1223,64 @@ const clearHighlight = () => {
             :key="group.collection.id"
             class="flex flex-col"
           >
-            <label
-              class="flex items-center gap-3 px-3 py-1.5 text-sm font-semibold text-surface-100 hover:bg-surface-800"
-            >
-              <input
-                type="checkbox"
-                :checked="collectionState(group.templates) === 'all'"
-                :indeterminate.prop="
-                  collectionState(group.templates) === 'some'
-                "
-                @change="toggleCollection(group.templates)"
-              />
-              <i class="fas fa-folder text-surface-500" />
-              <span class="truncate">{{ group.collection.name }}</span>
-              <span class="ml-auto text-xs text-surface-500">{{
-                group.templates.length
-              }}</span>
-            </label>
-            <label
-              v-for="template in group.templates"
-              :key="template.id"
-              class="flex items-center gap-3 py-1.5 pl-9 pr-3 text-sm hover:bg-surface-800"
-            >
-              <input
-                type="checkbox"
-                :checked="growTypes.includes(template.id)"
-                @change="toggleGrowType(template.id)"
-              />
-              <span
-                class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
-                :style="{ backgroundColor: methodColor(template.method) }"
-                >{{ template.method }}</span
+            <div class="flex items-center gap-1 hover:bg-surface-800">
+              <button
+                type="button"
+                class="w-6 shrink-0 py-1.5 text-xs text-surface-400"
+                @click="toggleFolded(group.collection.id)"
               >
-              <span class="truncate font-mono text-surface-200">{{
-                displayPath(template)
-              }}</span>
-              <span
-                v-if="needsFor(template).length > 0"
-                class="ml-auto shrink-0 text-xs text-amber-400"
-                >needs {{ needsFor(template).join(", ") }}</span
+                <i
+                  :class="
+                    collapsedCollections.has(group.collection.id)
+                      ? 'fas fa-chevron-right'
+                      : 'fas fa-chevron-down'
+                  "
+                />
+              </button>
+              <label
+                class="flex min-w-0 flex-1 items-center gap-3 py-1.5 pr-3 text-sm font-semibold text-surface-100"
               >
-            </label>
+                <input
+                  type="checkbox"
+                  :checked="collectionState(group.templates) === 'all'"
+                  :indeterminate.prop="
+                    collectionState(group.templates) === 'some'
+                  "
+                  @change="toggleCollection(group.templates)"
+                />
+                <i class="fas fa-folder text-surface-500" />
+                <span class="truncate">{{ group.collection.name }}</span>
+                <span class="ml-auto text-xs text-surface-500">{{
+                  group.templates.length
+                }}</span>
+              </label>
+            </div>
+            <template v-if="!collapsedCollections.has(group.collection.id)">
+              <label
+                v-for="template in group.templates"
+                :key="template.id"
+                class="flex items-center gap-3 py-1.5 pl-9 pr-3 text-sm hover:bg-surface-800"
+              >
+                <input
+                  type="checkbox"
+                  :checked="growTypes.includes(template.id)"
+                  @change="toggleGrowType(template.id)"
+                />
+                <span
+                  class="w-16 shrink-0 rounded py-0.5 text-center text-xs font-bold text-white"
+                  :style="{ backgroundColor: methodColor(template.method) }"
+                  >{{ template.method }}</span
+                >
+                <span class="truncate font-mono text-surface-200">{{
+                  displayPath(template)
+                }}</span>
+                <span
+                  v-if="needsFor(template).length > 0"
+                  class="ml-auto shrink-0 text-xs text-amber-400"
+                  >needs {{ needsFor(template).join(", ") }}</span
+                >
+              </label>
+            </template>
           </div>
         </div>
         <div
