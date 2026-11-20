@@ -1,3 +1,4 @@
+import { history, historyKeymap } from "@codemirror/commands";
 import {
   findNext,
   findPrevious,
@@ -5,6 +6,7 @@ import {
   search,
   searchPanelOpen,
 } from "@codemirror/search";
+import { EditorState } from "@codemirror/state";
 import {
   Decoration,
   type DecorationSet,
@@ -327,7 +329,9 @@ export const createHttpEditor = (
     EditorView.editable.of(editing),
     ...(editing
       ? [
+          history(),
           keymap.of([
+            ...historyKeymap,
             { key: "Mod-Shift-x", run: toggleStrike },
             { key: "Mod-/", run: toggleComment },
           ]),
@@ -347,6 +351,13 @@ export const createHttpEditor = (
   }
 
   const view = new EditorView({ parent, extensions });
+  // Text set from outside starts a fresh undo history, so Ctrl+Z cannot bring
+  // back text from another template or step.
+  const setText = (text: string) => {
+    if (text === view.state.doc.toString()) return;
+    view.setState(EditorState.create({ doc: text, extensions }));
+    redraw?.(text);
+  };
   if (editing) {
     parent.style.display = "flex";
     parent.style.flexDirection = "column";
@@ -357,11 +368,7 @@ export const createHttpEditor = (
   }
 
   return {
-    setText: (text: string) => {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: text },
-      });
-    },
+    setText,
     getText: () => view.state.doc.toString(),
     destroy: () => view.destroy(),
   };
