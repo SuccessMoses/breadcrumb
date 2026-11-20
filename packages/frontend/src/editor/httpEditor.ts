@@ -163,29 +163,45 @@ const themeFor = (autoHeight: boolean) =>
   );
 
 // Ctrl+Shift+X wraps the selection in ~~ markers, or unwraps it if it already has
-// them. With no selection it applies to the whole line.
+// them. A selection over several lines is handled one line at a time, so every
+// pair of markers stays on its own line. With no selection it applies to the
+// whole line.
 const toggleStrike = (view: EditorView): boolean => {
   const { state } = view;
   const range = state.selection.main;
   const line = state.doc.lineAt(range.head);
   const from = range.empty ? line.from : range.from;
-  const to = range.empty ? line.to : range.to;
-  if (from === to) return false;
+  let to = range.empty ? line.to : range.to;
+  // A selection that ends at the start of a line does not reach into that line
+  if (!range.empty && to > from && state.doc.lineAt(to).from === to) to -= 1;
 
-  const text = state.sliceDoc(from, to);
-  const wrapped =
-    text.length >= 4 && text.startsWith("~~") && text.endsWith("~~");
-  view.dispatch({
-    changes: wrapped
-      ? [
-          { from, to: from + 2 },
-          { from: to - 2, to },
-        ]
-      : [
-          { from, insert: "~~" },
-          { from: to, insert: "~~" },
-        ],
-  });
+  const segments: { from: number; to: number }[] = [];
+  for (let number = state.doc.lineAt(from).number; ; number++) {
+    const current = state.doc.line(number);
+    if (current.from > to) break;
+    const start = Math.max(from, current.from);
+    const end = Math.min(to, current.to);
+    if (end > start) segments.push({ from: start, to: end });
+    if (current.to >= to) break;
+  }
+  if (segments.length === 0) return false;
+
+  const isWrapped = (segment: { from: number; to: number }) => {
+    const text = state.sliceDoc(segment.from, segment.to);
+    return text.length >= 4 && text.startsWith("~~") && text.endsWith("~~");
+  };
+  const unwrap = segments.every(isWrapped);
+  const changes: { from: number; to?: number; insert?: string }[] = [];
+  for (const segment of segments) {
+    if (unwrap) {
+      changes.push({ from: segment.from, to: segment.from + 2 });
+      changes.push({ from: segment.to - 2, to: segment.to });
+    } else {
+      changes.push({ from: segment.from, insert: "~~" });
+      changes.push({ from: segment.to, insert: "~~" });
+    }
+  }
+  view.dispatch({ changes });
   return true;
 };
 
