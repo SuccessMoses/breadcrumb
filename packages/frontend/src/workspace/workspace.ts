@@ -25,7 +25,7 @@ import type { FrontendSDK } from "@/types";
 
 type Collection = { id: string; name: string };
 
-const DEFAULT_COLLECTION_ID = "default";
+export const DEFAULT_COLLECTION_ID = "default";
 
 // A tree is identified by its root sequence, which has no parent
 type Tree = { id: string; name: string };
@@ -157,6 +157,8 @@ export type Workspace = {
   ) => void;
   collectionOf: (templateId: string) => string;
   createCollection: (name: string) => void;
+  isCollectionEmpty: (collectionId: string) => boolean;
+  deleteCollection: (collectionId: string) => void;
   moveTemplate: (templateId: string, collectionId: string) => void;
   templateText: (templateId: string) => string | undefined;
   setTemplateText: (templateId: string, text: string) => void;
@@ -1022,6 +1024,16 @@ export const createWorkspace = (
     state.collections.push({ id: newId(), name: trimmed });
   };
 
+  // A collection can only be deleted once no request is in it; Default never goes
+  const isCollectionEmpty = (collectionId: string) =>
+    state.templates.every((t) => collectionOf(t.id) !== collectionId);
+
+  const deleteCollection = (collectionId: string) => {
+    if (collectionId === DEFAULT_COLLECTION_ID) return;
+    if (!isCollectionEmpty(collectionId)) return;
+    state.collections = state.collections.filter((c) => c.id !== collectionId);
+  };
+
   const moveTemplate = (templateId: string, collectionId: string) => {
     state.templateCollection[templateId] = collectionId;
   };
@@ -1103,6 +1115,8 @@ export const createWorkspace = (
     saveStepResponse,
     collectionOf,
     createCollection,
+    isCollectionEmpty,
+    deleteCollection,
     moveTemplate,
     templateText,
     setTemplateText,

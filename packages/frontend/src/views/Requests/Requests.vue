@@ -13,7 +13,7 @@ import { useSDK } from "@/plugins/sdk";
 import { compilePattern, sequenceText } from "@/query/sequenceText";
 import { sendWhenRendered } from "@/requests/notes";
 import { type Capture, NO_RULE, type TemplateRule } from "@/workspace/captures";
-import type { Workspace } from "@/workspace/workspace";
+import { DEFAULT_COLLECTION_ID, type Workspace } from "@/workspace/workspace";
 
 const { workspace, visible } = defineProps<{
   workspace: Workspace;
@@ -459,23 +459,34 @@ onMounted(() => {
             Import an OpenAPI 3 JSON spec to create request templates
           </div>
           <template v-for="group in groups" :key="group.collection.id">
-            <button
-              type="button"
-              class="w-full flex items-center justify-between px-3 py-2 text-sm font-semibold text-surface-200 border-b border-surface-700 hover:bg-surface-800"
-              @click="toggleCollapsed(group.collection.id)"
-            >
-              <span>{{ group.collection.name }}</span>
-              <span class="flex items-center gap-2 text-xs text-surface-500">
-                {{ group.templates.length }}
-                <i
-                  :class="
-                    isCollapsed(group.collection.id)
-                      ? 'fas fa-chevron-right'
-                      : 'fas fa-chevron-down'
-                  "
-                />
-              </span>
-            </button>
+            <div class="flex items-center border-b border-surface-700">
+              <button
+                type="button"
+                class="min-w-0 flex-1 flex items-center justify-between px-3 py-2 text-sm font-semibold text-surface-200 hover:bg-surface-800"
+                @click="toggleCollapsed(group.collection.id)"
+              >
+                <span class="truncate">{{ group.collection.name }}</span>
+                <span class="flex items-center gap-2 text-xs text-surface-500">
+                  {{ group.templates.length }}
+                  <i
+                    :class="
+                      isCollapsed(group.collection.id)
+                        ? 'fas fa-chevron-right'
+                        : 'fas fa-chevron-down'
+                    "
+                  />
+                </span>
+              </button>
+              <button
+                v-if="group.collection.id !== DEFAULT_COLLECTION_ID"
+                type="button"
+                class="shrink-0 px-3 py-2 text-xs text-surface-500 hover:text-red-400 disabled:opacity-40 disabled:hover:text-surface-500"
+                :disabled="!workspace.isCollectionEmpty(group.collection.id)"
+                @click="workspace.deleteCollection(group.collection.id)"
+              >
+                <i class="fas fa-trash" />
+              </button>
+            </div>
             <template v-if="!isCollapsed(group.collection.id)">
               <button
                 v-for="template in group.templates"
