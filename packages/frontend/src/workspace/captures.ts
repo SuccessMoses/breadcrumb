@@ -11,19 +11,26 @@ export const NO_RULE: TemplateRule = { captures: [] };
 // Between a step's request and its response, in the text captures run over
 export const RESPONSE_DIVIDER = "\x1e-----response-----\r\n";
 
-// {{name}} is the first value, {{name|2}} the second, {{name|*}} each value in
+// {{name}} is the last value, {{name|1}} the first, {{name|2}} the second, {{name|*}} each value in
 // turn: one rendering for each, and for several of them every combination
 const PLACEHOLDER = /\{\{([^{}]+)\}\}/g;
 
-// index: the position of the value (0-based), "*" for each value, or undefined
-// when the spec is not understood
-type Placeholder = { name: string; index: number | "*" | undefined };
+// index: the position of the value (0-based), "last" for the final value, "*" for
+// each value, or undefined when the spec is not understood
+type Placeholder = {
+  name: string;
+  index: number | "*" | "last" | undefined;
+};
+
+// The value at a position of a list, if there is one
+const valueAt = (list: string[], index: number | "last"): string | undefined =>
+  list[index === "last" ? list.length - 1 : index];
 
 const parsePlaceholder = (inner: string): Placeholder => {
   const bar = inner.indexOf("|");
   const name = (bar === -1 ? inner : inner.slice(0, bar)).trim();
   const spec = bar === -1 ? "" : inner.slice(bar + 1).trim();
-  if (spec === "") return { name, index: 0 };
+  if (spec === "" || spec === "last") return { name, index: "last" };
   if (spec === "*") return { name, index: "*" };
   const position = /^\d+$/.test(spec) ? Number(spec) : 0;
   return position >= 1
@@ -45,7 +52,7 @@ export const unmetNames = (
         ? false
         : index === "*"
           ? list.length > 0
-          : list[index] !== undefined;
+          : valueAt(list, index) !== undefined;
     if (!met) unmet.add(name);
   }
   return [...unmet];
@@ -67,8 +74,8 @@ export const fillCaptures = (
   const single = new Map<string, string>();
   for (const match of text.matchAll(PLACEHOLDER)) {
     const { name, index } = parsePlaceholder(match[1] ?? "");
-    if (typeof index !== "number") continue;
-    const value = (values[name] ?? [])[index];
+    if (index === undefined || index === "*") continue;
+    const value = valueAt(values[name] ?? [], index);
     if (value !== undefined) single.set(match[0], value);
   }
 

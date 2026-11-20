@@ -612,7 +612,7 @@ onMounted(() => {
         <div class="flex items-center justify-between gap-2 px-3 py-1">
           <span class="text-xs text-surface-500">
             Template. {random} is a new random string in each sequence it is
-            rendered into. &#123;&#123;name&#125;&#125; is the first value
+            rendered into. &#123;&#123;name&#125;&#125; is the last value
             captured by an earlier step, &#123;&#123;name|2&#125;&#125; the
             second, and &#123;&#123;name|*&#125;&#125; makes a sequence for each
             value.
