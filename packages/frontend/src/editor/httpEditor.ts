@@ -8,7 +8,7 @@ import {
 } from "@codemirror/view";
 
 import { checkHttp } from "@/requests/checkHttp";
-import { STRUCK } from "@/requests/strike";
+import { isComment, STRUCK } from "@/requests/notes";
 
 type Mark = { from: number; to: number; className: string };
 
@@ -84,6 +84,7 @@ const marksFor = (view: EditorView): Mark[] => {
     eachMatch(STRUCK, text, line.from, (start, match) =>
       add(start, start + match[0].length, "cm-http-struck"),
     );
+    if (isComment(text)) add(line.from, line.to, "cm-http-comment");
   }
 
   return marks;
@@ -150,6 +151,7 @@ const themeFor = (autoHeight: boolean) =>
       ".cm-http-string": { color: "#98c379" },
       ".cm-http-number": { color: "#d19a66" },
       ".cm-http-atom": { color: "#c678dd" },
+      ".cm-http-comment": { color: "#6a9955" },
       ".cm-http-struck": {
         textDecoration: "line-through",
         color: "#6b7079",
@@ -162,6 +164,34 @@ const themeFor = (autoHeight: boolean) =>
     },
     { dark: true },
   );
+
+// Ctrl+/ turns the selected lines into comments, or back. It adds or removes the
+// "# " at the start of each line.
+const toggleComment = (view: EditorView): boolean => {
+  const { state } = view;
+  const range = state.selection.main;
+  const first = state.doc.lineAt(range.from);
+  const last = state.doc.lineAt(range.empty ? range.from : range.to);
+  const lines = [];
+  for (let number = first.number; number <= last.number; number++) {
+    lines.push(state.doc.line(number));
+  }
+  const allCommented = lines.every((line) => isComment(line.text));
+  view.dispatch({
+    changes: lines.map((line) =>
+      allCommented
+        ? {
+            from: line.from + line.text.indexOf("#"),
+            to:
+              line.from +
+              line.text.indexOf("#") +
+              (line.text.startsWith("# ", line.text.indexOf("#")) ? 2 : 1),
+          }
+        : { from: line.from, insert: "# " },
+    ),
+  });
+  return true;
+};
 
 // Ctrl+Shift+X wraps the selection in ~~ markers, or unwraps it if it already has
 // them. A selection over several lines is handled one line at a time, so every
@@ -265,7 +295,12 @@ export const createHttpEditor = (
     EditorView.contentAttributes.of({ spellcheck: "false" }),
     EditorView.editable.of(editing),
     ...(editing
-      ? [keymap.of([{ key: "Mod-Shift-x", run: toggleStrike }])]
+      ? [
+          keymap.of([
+            { key: "Mod-Shift-x", run: toggleStrike },
+            { key: "Mod-/", run: toggleComment },
+          ]),
+        ]
       : []),
   ];
   let redraw: ((text: string) => void) | undefined;

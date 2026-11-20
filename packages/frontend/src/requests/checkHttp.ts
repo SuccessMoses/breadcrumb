@@ -1,4 +1,4 @@
-import { STRUCK } from "./strike";
+import { isComment, STRUCK } from "./notes";
 
 type Issue = { line: number; severity: "error" | "warning"; message: string };
 type Kept = { line: number; text: string };
@@ -26,7 +26,7 @@ const keptLines = (text: string): Kept[] => {
   const kept: Kept[] = [];
   text.split("\n").forEach((raw, index) => {
     const line = raw.replace(/\r$/, "");
-    if (WHOLE_STRUCK.test(line)) return;
+    if (isComment(line) || WHOLE_STRUCK.test(line)) return;
     kept.push({
       line: index + 1,
       text: line.replace(STRUCK, "").replace(PLACEHOLDER, "0"),
