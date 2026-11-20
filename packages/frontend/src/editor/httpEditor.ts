@@ -7,6 +7,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
+import { checkHttp } from "@/requests/checkHttp";
 import { STRUCK } from "@/requests/strike";
 
 type Mark = { from: number; to: number; className: string };
@@ -205,31 +206,86 @@ const toggleStrike = (view: EditorView): boolean => {
   return true;
 };
 
+// The bar under an editing editor: its problems, each one a button that jumps to
+// its line. Returns the function that redraws it.
+const problemBar = (parent: HTMLElement, view: EditorView) => {
+  const bar = document.createElement("div");
+  bar.style.cssText =
+    "flex:none;max-height:7rem;overflow:auto;padding:4px 8px;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#1d1f24;border-top:1px solid #33363d;";
+  parent.appendChild(bar);
+
+  return (text: string) => {
+    bar.replaceChildren();
+    const issues = checkHttp(text);
+    if (issues.length === 0) {
+      const ok = document.createElement("div");
+      ok.textContent = "No problems found";
+      ok.style.color = "#6b7079";
+      bar.appendChild(ok);
+      return;
+    }
+    for (const issue of issues) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = `Line ${issue.line}: ${issue.message}`;
+      button.style.cssText = `display:block;background:none;border:none;padding:1px 0;text-align:left;cursor:pointer;font:inherit;color:${issue.severity === "error" ? "#f87171" : "#fbbf24"};`;
+      button.addEventListener("click", () => {
+        const line = view.state.doc.line(
+          Math.min(issue.line, view.state.doc.lines),
+        );
+        view.dispatch({
+          selection: { anchor: line.from },
+          scrollIntoView: true,
+        });
+        view.focus();
+      });
+      bar.appendChild(button);
+    }
+  };
+};
+
 export type HttpEditor = {
   setText: (text: string) => void;
   getText: () => string;
   destroy: () => void;
 };
 
-// autoHeight sizes the editor to its text instead of filling its parent
+// autoHeight sizes the editor to its text instead of filling its parent. An
+// editing editor also shows its problems in a bar under the text.
 export const createHttpEditor = (
   parent: HTMLElement,
   readOnly: boolean,
   autoHeight = false,
 ): HttpEditor => {
-  const view = new EditorView({
-    parent,
-    extensions: [
-      themeFor(autoHeight),
-      highlightPlugin,
-      EditorView.lineWrapping,
-      EditorView.contentAttributes.of({ spellcheck: "false" }),
-      EditorView.editable.of(!readOnly),
-      ...(readOnly
-        ? []
-        : [keymap.of([{ key: "Mod-Shift-x", run: toggleStrike }])]),
-    ],
-  });
+  const editing = !readOnly;
+  const extensions = [
+    themeFor(autoHeight),
+    highlightPlugin,
+    EditorView.lineWrapping,
+    EditorView.contentAttributes.of({ spellcheck: "false" }),
+    EditorView.editable.of(editing),
+    ...(editing
+      ? [keymap.of([{ key: "Mod-Shift-x", run: toggleStrike }])]
+      : []),
+  ];
+  let redraw: ((text: string) => void) | undefined;
+  if (editing) {
+    extensions.push(
+      EditorView.updateListener.of((update) => {
+        if (update.docChanged) redraw?.(update.state.doc.toString());
+      }),
+    );
+  }
+
+  const view = new EditorView({ parent, extensions });
+  if (editing) {
+    parent.style.display = "flex";
+    parent.style.flexDirection = "column";
+    view.dom.style.flex = autoHeight ? "none" : "1 1 0";
+    view.dom.style.minHeight = "0";
+    redraw = problemBar(parent, view);
+    redraw(view.state.doc.toString());
+  }
 
   return {
     setText: (text: string) => {
