@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { compilePattern, sequenceText } from "@caido-community/breadcrumb-core";
+import {
+  compilePattern,
+  displayPath,
+  methodColor,
+  responseStatus,
+  sequenceText,
+} from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
 import Dialog from "primevue/dialog";
@@ -9,7 +15,6 @@ import type { RequestTemplate, Sequence } from "shared";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
-import { displayPath, methodColor, responseStatus } from "@/requests/display";
 import {
   DEFAULT_TREE_SETTINGS,
   loadTreeSettings,

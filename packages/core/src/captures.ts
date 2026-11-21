@@ -1,4 +1,4 @@
-import { compilePattern } from "@caido-community/breadcrumb-core";
+import { compilePattern } from "./sequenceText";
 
 // A capture reads values out of a rendered step and makes them available to the
 // later steps of the same sequence as {{name}}.

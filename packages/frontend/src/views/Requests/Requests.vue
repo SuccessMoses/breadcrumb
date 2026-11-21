@@ -4,6 +4,11 @@ import {
   sendWhenRendered,
   sequenceText,
 } from "@caido-community/breadcrumb-core";
+import {
+  type Capture,
+  NO_RULE,
+  type TemplateRule,
+} from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
 import InputText from "primevue/inputtext";
@@ -15,7 +20,6 @@ import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
 import { parseOpenApi } from "@/openapi/parseOpenApi";
 import { useSDK } from "@/plugins/sdk";
-import { type Capture, NO_RULE, type TemplateRule } from "@/workspace/captures";
 import { DEFAULT_COLLECTION_ID, type Workspace } from "@/workspace/workspace";
 
 const { workspace, visible } = defineProps<{
