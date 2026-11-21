@@ -1,9 +1,4 @@
 <script setup lang="ts">
-import {
-  compilePattern,
-  sendWhenRendered,
-  sequenceText,
-} from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
 import InputText from "primevue/inputtext";
@@ -213,49 +208,6 @@ const addCollection = () => {
   workspace.createCollection(newCollectionName.value);
   newCollectionName.value = "";
 };
-
-const renderPattern = ref("");
-const renderMatch = computed(() => {
-  const text = renderPattern.value.trim();
-  return text === "" ? undefined : compilePattern(text);
-});
-const renderTargets = computed(() => {
-  const match = renderMatch.value;
-  if (match === undefined || match.kind === "error") return [];
-  return workspace.rows.value
-    .map((row) => row.sequence)
-    .filter((sequence) => match.regex.test(sequenceText(sequence)));
-});
-
-const renderOnTop = async () => {
-  const template = selectedTemplate.value;
-  if (template === undefined) return;
-  // Snapshot the matches first: extending adds children that must not match again
-  const targetIds = renderTargets.value.map((sequence) => sequence.id);
-  let rendered = 0;
-  for (const id of targetIds) {
-    // A failed render has already shown its error; the rest are left alone
-    if ((await workspace.extendSequence(id, template.id)) !== undefined) break;
-    rendered += 1;
-  }
-  if (rendered === targetIds.length) {
-    sdk.window.showToast(`Rendered on ${rendered} sequence(s)`, {
-      variant: "success",
-    });
-  }
-};
-
-// Set by the template's own command line, see sendWhenRendered
-const sendsOnRender = computed(() => {
-  const id = selectedTemplateId.value;
-  return id !== undefined && sendWhenRendered(workspace.templateText(id) ?? "");
-});
-
-const renderLabel = computed(() =>
-  sendsOnRender.value
-    ? `Render & send (${renderTargets.value.length})`
-    : `Render on top (${renderTargets.value.length})`,
-);
 
 const toLf = (text: string) => text.replace(/\r\n/g, "\n");
 const toCrlf = (text: string) => text.replace(/\r?\n/g, "\r\n");
@@ -533,34 +485,6 @@ onMounted(() => {
             >
           </div>
         </div>
-
-        <div class="flex items-center gap-2 px-3 pb-2">
-          <InputText
-            v-model="renderPattern"
-            placeholder="Regex: sequences to render on top of, e.g. ^$"
-            size="small"
-            class="flex-1 font-mono"
-            spellcheck="false"
-          />
-          <span class="text-xs text-surface-500 whitespace-nowrap">
-            {{ renderTargets.length }} match
-          </span>
-          <Button
-            :label="renderLabel"
-            size="small"
-            icon="fas fa-layer-group"
-            :disabled="
-              selectedTemplate === undefined || renderTargets.length === 0
-            "
-            @click="renderOnTop"
-          />
-        </div>
-        <p
-          v-if="renderMatch !== undefined && renderMatch.kind === 'error'"
-          class="px-3 pb-2 text-sm text-red-400"
-        >
-          Regex error: {{ renderMatch.message }}
-        </p>
 
         <div class="flex items-center justify-between gap-2 px-3 py-1">
           <span class="text-xs text-surface-500">
