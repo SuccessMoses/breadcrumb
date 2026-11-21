@@ -94,16 +94,22 @@ const menuItems = computed(() => {
 
 // Where the menu opened, so its submenu can stop at the bottom of the window
 const menuTop = ref(0);
-// The submenu hangs below its item and PrimeVue does not flip it, so it is limited
-// to the room left under the click and scrolls, instead of running off the window
-const menuPt = computed(() => ({
-  submenu: {
-    style: {
-      maxHeight: `${Math.max(120, window.innerHeight - menuTop.value - 24)}px`,
-      overflowY: "auto",
+// The submenu opens down from its item, or up when the click is in the lower half
+// of the window, and PrimeVue does not flip it itself. Either way it is limited to
+// the room on that side and scrolls, instead of running off the window.
+const menuPt = computed(() => {
+  const up = menuTop.value > window.innerHeight / 2;
+  const room = up ? menuTop.value : window.innerHeight - menuTop.value;
+  return {
+    submenu: {
+      style: {
+        maxHeight: `${Math.max(120, room - 24)}px`,
+        overflowY: "auto",
+        ...(up ? { top: "auto", bottom: "0px" } : {}),
+      },
     },
-  },
-}));
+  };
+});
 
 const openMenu = (event: MouseEvent, template: RequestTemplate) => {
   menuIds.value = picked.value.has(template.id)
