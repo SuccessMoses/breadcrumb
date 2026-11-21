@@ -1,3 +1,10 @@
+import {
+  defaultRequest,
+  dictValues,
+  expandTemplate,
+  sendWhenRendered,
+  stripNotes,
+} from "@caido-community/breadcrumb-core";
 import type { RequestTemplate, Sequence, SequenceStep } from "shared";
 import {
   computed,
@@ -19,8 +26,6 @@ import {
 } from "./captures";
 
 import { displayPath } from "@/requests/display";
-import { dictValues, sendWhenRendered, stripNotes } from "@/requests/notes";
-import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
 
 type Collection = { id: string; name: string };

@@ -6,7 +6,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint ./packages/**/src --fix",
     "knip": "knip",
-    "build:shared": "pnpm --filter @caido-community/breadcrumb build",
+    "build:shared": "pnpm --filter @caido-community/breadcrumb build && pnpm --filter @caido-community/breadcrumb-core build",
     "build": "pnpm build:shared && caido-dev build",
     "watch": "pnpm build:shared && caido-dev watch"
   },

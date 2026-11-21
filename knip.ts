@@ -9,6 +9,11 @@ const config: RawConfigurationOrFn = {
       entry: ["src/index.ts", "tsdown.config.ts"],
       project: ["src/**/*.ts"],
     },
+    "packages/core": {
+      entry: ["src/index.ts", "tsdown.config.ts"],
+      project: ["src/**/*.ts"],
+      ignoreDependencies: ["shared"],
+    },
     "packages/backend": {
       entry: ["src/index.ts"],
       project: ["src/**/*.ts"],

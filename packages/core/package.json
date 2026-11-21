@@ -1,0 +1,29 @@
+{
+  "name": "@caido-community/breadcrumb-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "prepare": "pnpm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "shared": "workspace:@caido-community/breadcrumb@*"
+  },
+  "devDependencies": {
+    "tsdown": "0.22.3"
+  }
+}

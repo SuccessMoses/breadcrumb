@@ -1,3 +1,9 @@
+import {
+  checkHttp,
+  isCommand,
+  isComment,
+  STRUCK,
+} from "@caido-community/breadcrumb-core";
 import { history, historyKeymap } from "@codemirror/commands";
 import {
   findNext,
@@ -15,9 +21,6 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
-
-import { checkHttp } from "@/requests/checkHttp";
-import { isCommand, isComment, STRUCK } from "@/requests/notes";
 
 type Mark = { from: number; to: number; className: string };
 
