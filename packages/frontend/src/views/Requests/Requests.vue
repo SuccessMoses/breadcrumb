@@ -4,11 +4,6 @@ import {
   sendWhenRendered,
   sequenceText,
 } from "@caido-community/breadcrumb-core";
-import {
-  type Capture,
-  NO_RULE,
-  type TemplateRule,
-} from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
 import InputText from "primevue/inputtext";
@@ -249,50 +244,6 @@ const renderOnTop = async () => {
     });
   }
 };
-
-// Captures and send-on-render belong to the selected template
-const rule = computed(() => {
-  const id = selectedTemplateId.value;
-  return id === undefined ? NO_RULE : workspace.ruleOf(id);
-});
-
-const updateRule = (change: (current: TemplateRule) => TemplateRule) => {
-  const id = selectedTemplateId.value;
-  if (id === undefined) return;
-  workspace.setRule(id, change(workspace.ruleOf(id)));
-};
-
-const addCapture = () =>
-  updateRule((current) => ({
-    ...current,
-    captures: [...current.captures, { name: "", regex: "" }],
-  }));
-
-const removeCapture = (index: number) =>
-  updateRule((current) => ({
-    ...current,
-    captures: current.captures.filter((_, i) => i !== index),
-  }));
-
-const onCaptureInput = (index: number, field: keyof Capture, event: Event) => {
-  const value = (event.target as HTMLInputElement).value;
-  updateRule((current) => ({
-    ...current,
-    captures: current.captures.map((capture, i) =>
-      i === index ? { ...capture, [field]: value } : capture,
-    ),
-  }));
-};
-
-const captureError = computed(() => {
-  for (const capture of rule.value.captures) {
-    const pattern = compilePattern(capture.regex);
-    if (pattern.kind === "error") {
-      return `Capture "${capture.name}": ${pattern.message}`;
-    }
-  }
-  return undefined;
-});
 
 // Set by the template's own command line, see sendWhenRendered
 const sendsOnRender = computed(() => {
@@ -611,58 +562,15 @@ onMounted(() => {
           Regex error: {{ renderMatch.message }}
         </p>
 
-        <div class="flex flex-col gap-2 px-3 pb-2">
-          <div class="flex items-center justify-end gap-2 text-sm">
-            <Button
-              label="Add capture"
-              icon="fas fa-plus"
-              size="small"
-              severity="secondary"
-              :disabled="selectedTemplate === undefined"
-              @click="addCapture"
-            />
-          </div>
-          <div
-            v-for="(capture, index) in rule.captures"
-            :key="index"
-            class="flex items-center gap-2"
-          >
-            <InputText
-              :model-value="capture.name"
-              placeholder="name"
-              size="small"
-              class="w-40 font-mono"
-              spellcheck="false"
-              @input="onCaptureInput(index, 'name', $event)"
-            />
-            <InputText
-              :model-value="capture.regex"
-              placeholder="regex: the last group of the first match is the value"
-              size="small"
-              class="flex-1 font-mono"
-              spellcheck="false"
-              @input="onCaptureInput(index, 'regex', $event)"
-            />
-            <Button
-              icon="fas fa-trash"
-              severity="secondary"
-              text
-              size="small"
-              @click="removeCapture(index)"
-            />
-          </div>
-          <p v-if="captureError !== undefined" class="text-sm text-red-400">
-            {{ captureError }}
-          </p>
-        </div>
-
         <div class="flex items-center justify-between gap-2 px-3 py-1">
           <span class="text-xs text-surface-500">
             Template. {random} is a new random string in each sequence it is
             rendered into. &#123;&#123;name&#125;&#125; is the last value
             captured by an earlier step, &#123;&#123;name|2&#125;&#125; the
             second, and &#123;&#123;name|*&#125;&#125; makes a sequence for each
-            value. A line "# ``dict name = a, b" starts the values of name.
+            value. A line "# ``dict name = a, b" starts the values of name, and
+            "# ``dict name from regex" takes the last group of each match in the
+            response as a value.
           </span>
         </div>
         <div

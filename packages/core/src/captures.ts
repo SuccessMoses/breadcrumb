@@ -4,10 +4,6 @@ import { compilePattern } from "./sequenceText";
 // later steps of the same sequence as {{name}}.
 export type Capture = { name: string; regex: string };
 
-export type TemplateRule = { captures: Capture[] };
-
-export const NO_RULE: TemplateRule = { captures: [] };
-
 // Between a step's request and its response, in the text captures run over
 export const RESPONSE_DIVIDER = "\x1e-----response-----\r\n";
 

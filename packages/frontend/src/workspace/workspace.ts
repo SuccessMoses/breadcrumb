@@ -103,7 +103,6 @@ export const createWorkspace = (
       state.texts,
       state.collections,
       state.templateCollection,
-      state.rules,
     ],
     () => core.scheduleSave(),
     { deep: true },

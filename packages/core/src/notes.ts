@@ -19,9 +19,29 @@ const SETTING =
   /^[ \t]*#[ \t]*``set[ \t]+([A-Za-z_]\w*)[ \t]*=[ \t]*(\S*)[ \t]*$/;
 // ``dict name = a, b, c seeds the values of a name, before any step captures one
 const DICT = /^[ \t]*#[ \t]*``dict[ \t]+([A-Za-z_]\w*)[ \t]*=(.*)$/;
+// ``dict name from <regex> adds to name the value its regex finds in each response:
+// the last group of each match, in the order found
+const CAPTURE =
+  /^[ \t]*#[ \t]*``dict[ \t]+([A-Za-z_]\w*)[ \t]+from[ \t]+(.+?)[ \t]*$/;
 
 export const isCommand = (line: string): boolean =>
-  SETTING.test(line) || DICT.test(line);
+  SETTING.test(line) || DICT.test(line) || CAPTURE.test(line);
+
+// The capture a line declares, if it declares one
+export const captureOf = (
+  line: string,
+): { name: string; regex: string } | undefined => {
+  const match = CAPTURE.exec(line.replace(/\r$/, ""));
+  if (match === null) return undefined;
+  return { name: match[1] ?? "", regex: match[2] ?? "" };
+};
+
+// The captures a template declares, in the order its lines give them
+export const captureLines = (text: string): { name: string; regex: string }[] =>
+  text
+    .split("\n")
+    .map((line) => captureOf(line))
+    .filter((capture) => capture !== undefined);
 
 // Whether a template is sent while it is rendered. The last send_when_rendered
 // setting wins; without one the template is sent.

@@ -1,4 +1,5 @@
-import { isComment, STRUCK } from "./notes";
+import { captureOf, isComment, STRUCK } from "./notes";
+import { compilePattern } from "./sequenceText";
 
 type Issue = { line: number; severity: "error" | "warning"; message: string };
 type Kept = { line: number; text: string };
@@ -52,6 +53,16 @@ export const checkHttp = (text: string): Issue[] => {
   const issues: Issue[] = [];
   const add = (line: number, severity: "error" | "warning", message: string) =>
     issues.push({ line, severity, message });
+
+  // Captures are read from comment lines, which the checks below skip
+  text.split("\n").forEach((line, index) => {
+    const capture = captureOf(line);
+    if (capture === undefined) return;
+    const pattern = compilePattern(capture.regex);
+    if (pattern.kind === "error") {
+      add(index + 1, "error", `Capture ${capture.name}: ${pattern.message}`);
+    }
+  });
 
   const kept = keptLines(text);
   const first = kept[0];

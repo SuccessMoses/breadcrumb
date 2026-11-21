@@ -3,14 +3,17 @@ import type { RequestTemplate, Sequence, SequenceStep } from "shared";
 import {
   type Capture,
   fillCaptures,
-  NO_RULE,
   RESPONSE_DIVIDER,
   runCaptures,
-  type TemplateRule,
   unmetNames,
 } from "./captures";
 import { displayPath } from "./display";
-import { dictValues, sendWhenRendered, stripNotes } from "./notes";
+import {
+  captureLines,
+  dictValues,
+  sendWhenRendered,
+  stripNotes,
+} from "./notes";
 import { defaultRequest, expandTemplate } from "./renderRequest";
 
 // Something read and written through .value, as a Vue ref is
@@ -57,7 +60,6 @@ export type WorkspaceState = {
   texts: Record<string, string>;
   collections: Collection[];
   templateCollection: Record<string, string>;
-  rules: Record<string, TemplateRule>;
 };
 
 // Outcome of rendering one step: its text, its response if it was sent, and
@@ -146,10 +148,8 @@ export type CoreWorkspace = {
     steps: number;
     error: string | undefined;
   }>;
-  ruleOf: (templateId: string) => TemplateRule;
   // The {{name}} inputs of a template that no step of the sequence captured
   missingInputs: (templateId: string, sequenceId: string) => string[];
-  setRule: (templateId: string, rule: TemplateRule) => void;
   selectSequence: (id: string) => void;
   selectTree: (id: string) => void;
   createTree: (name: string) => void;
@@ -198,7 +198,6 @@ export const emptyState = (): WorkspaceState => ({
   texts: {},
   collections: [],
   templateCollection: {},
-  rules: {},
 });
 
 const restoreFolds = (value: unknown): Folds => {
@@ -330,26 +329,34 @@ const restoreCaptures = (value: unknown): Capture[] =>
       )
     : [];
 
-const restoreRules = (value: unknown): Record<string, TemplateRule> =>
+// Captures were kept per template before they moved into the template text
+const restoreLegacyRules = (value: unknown): Record<string, Capture[]> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
     ? Object.fromEntries(
         Object.entries(value).flatMap(
-          ([templateId, rule]): [string, TemplateRule][] =>
+          ([templateId, rule]): [string, Capture[]][] =>
             typeof rule === "object" && rule !== null
               ? [
                   [
                     templateId,
-                    {
-                      captures: restoreCaptures(
-                        hasKey(rule, "captures") ? rule.captures : undefined,
-                      ),
-                    },
+                    restoreCaptures(
+                      hasKey(rule, "captures") ? rule.captures : undefined,
+                    ),
                   ],
                 ]
               : [],
         ),
       )
     : {};
+
+// Adds lines to the end of a template text, leaving out any it already has
+const appendLines = (text: string, lines: string[]): string => {
+  const present = new Set(text.split("\n"));
+  const added = lines.filter((line) => !present.has(line));
+  if (added.length === 0) return text;
+  const base = text === "" || text.endsWith("\n") ? text : `${text}\n`;
+  return `${base}${added.join("\n")}\n`;
+};
 
 const ROOT_NAME = "/";
 
@@ -457,9 +464,27 @@ export const createCore = ({
       state.texts = restoreStrings(
         hasKey(saved, "texts") ? saved.texts : undefined,
       );
-      state.rules = restoreRules(
+      // Captures still kept per template move into the template text, once.
+      // Remove this when no project file has a rules entry left.
+      const legacy = restoreLegacyRules(
         hasKey(saved, "rules") ? saved.rules : undefined,
       );
+      for (const [templateId, captures] of Object.entries(legacy)) {
+        const lines = captures.map(
+          (capture) => `# \`\`dict ${capture.name} from ${capture.regex}`,
+        );
+        state.texts[templateId] = appendLines(
+          state.texts[templateId] ?? "",
+          lines,
+        );
+        for (const sequence of state.sequences) {
+          for (const step of sequence.steps) {
+            if (step.templateId === templateId && step.template !== undefined) {
+              step.template = appendLines(step.template, lines);
+            }
+          }
+        }
+      }
     }
 
     // Every template starts in the Default collection, which always exists
@@ -482,7 +507,6 @@ export const createCore = ({
     texts: state.texts,
     collections: state.collections,
     templateCollection: state.templateCollection,
-    rules: state.rules,
   });
   const save = () => adapter.save(snapshot());
 
@@ -726,7 +750,7 @@ export const createCore = ({
       valuesBefore(before, text),
       fixed,
     );
-    const rule = state.rules[templateId] ?? NO_RULE;
+    const captures = captureLines(text);
 
     const results: Rendered[] = [];
     for (const filling of fillings) {
@@ -743,7 +767,7 @@ export const createCore = ({
         response === undefined
           ? filling.request
           : filling.request + RESPONSE_DIVIDER + response;
-      const result = runCaptures(rule.captures, subject);
+      const result = runCaptures(captures, subject);
       if (result.kind === "error") return result;
       results.push({
         request: filling.request,
@@ -1016,12 +1040,6 @@ export const createCore = ({
     return { sequences, steps, error: undefined };
   };
 
-  const ruleOf = (templateId: string) => state.rules[templateId] ?? NO_RULE;
-
-  const setRule = (templateId: string, rule: TemplateRule) => {
-    state.rules[templateId] = rule;
-  };
-
   const findStep = (sequenceId: string, stepId: string) =>
     state.sequences
       .find((s) => s.id === sequenceId)
@@ -1165,8 +1183,6 @@ export const createCore = ({
     grow,
     deleteSequence,
     rerenderSequence,
-    ruleOf,
-    setRule,
     missingInputs,
     selectSequence,
     selectTree,
