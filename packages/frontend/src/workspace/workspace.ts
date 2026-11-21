@@ -19,7 +19,7 @@ import {
 } from "./captures";
 
 import { displayPath } from "@/requests/display";
-import { sendWhenRendered, stripNotes } from "@/requests/notes";
+import { dictValues, sendWhenRendered, stripNotes } from "@/requests/notes";
 import { defaultRequest, expandTemplate } from "@/requests/renderRequest";
 import type { FrontendSDK } from "@/types";
 
@@ -642,16 +642,31 @@ export const createWorkspace = (
     return template.id;
   };
 
-  // The values the steps before a step captured, per name, merged as a set in the
-  // order they were first found. A name captured by several steps has all of them.
-  const valuesBefore = (steps: SequenceStep[]) =>
-    steps.reduce<Record<string, string[]>>((values, step) => {
+  // The values of each name a sequence has so far, as a set. They start from the
+  // ``dict lines of its templates, so those values come first, and then the values
+  // the steps before a step captured are added after them, in the order found.
+  // current is the template text of the step being rendered, if it is not one of
+  // the steps yet.
+  const valuesBefore = (steps: SequenceStep[], current?: string) => {
+    const texts = steps.map(
+      (step) => step.template ?? templateText(step.templateId) ?? "",
+    );
+    if (current !== undefined) texts.push(current);
+    const seeded = texts.reduce<Record<string, string[]>>((values, text) => {
+      const merged = { ...values };
+      for (const [name, declared] of Object.entries(dictValues(text))) {
+        merged[name] = [...new Set([...(values[name] ?? []), ...declared])];
+      }
+      return merged;
+    }, {});
+    return steps.reduce<Record<string, string[]>>((values, step) => {
       const merged = { ...values };
       for (const [name, found] of Object.entries(step.captured ?? {})) {
         merged[name] = [...new Set([...(values[name] ?? []), ...found])];
       }
       return merged;
-    }, {});
+    }, seeded);
+  };
 
   // Renders a template as the next step after the given steps: fills its
   // placeholders from them, then for each filling sends the request if the
@@ -664,7 +679,7 @@ export const createWorkspace = (
   ): Promise<RenderResult> => {
     const fillings = fillCaptures(
       expandTemplate(text),
-      valuesBefore(before),
+      valuesBefore(before, text),
       fixed,
     );
     const rule = state.rules[templateId] ?? NO_RULE;
@@ -700,7 +715,7 @@ export const createWorkspace = (
     const text = templateText(templateId);
     const sequence = state.sequences.find((s) => s.id === sequenceId);
     if (text === undefined || sequence === undefined) return [];
-    return unmetNames(stripNotes(text), valuesBefore(sequence.steps));
+    return unmetNames(stripNotes(text), valuesBefore(sequence.steps, text));
   };
 
   // Creates one child of a sequence for each rendering of the template, without

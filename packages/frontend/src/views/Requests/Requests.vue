@@ -635,7 +635,7 @@ onMounted(() => {
             rendered into. &#123;&#123;name&#125;&#125; is the last value
             captured by an earlier step, &#123;&#123;name|2&#125;&#125; the
             second, and &#123;&#123;name|*&#125;&#125; makes a sequence for each
-            value.
+            value. A line "# ``dict name = a, b" starts the values of name.
           </span>
         </div>
         <div
