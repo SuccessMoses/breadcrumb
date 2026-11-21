@@ -107,6 +107,11 @@ export type CoreWorkspace = {
   renderingsOf: () => Map<string, Rendering[]>;
   selectedSequenceOf: () => Sequence | undefined;
   rowsOf: () => SequenceRow[];
+  // The requests a template would send from a sequence's steps, without sending them
+  previewTemplate: (
+    templateId: string,
+    sequenceId?: string,
+  ) => { kind: "ok"; requests: string[] } | { kind: "error"; message: string };
   // Saves the project after a short pause; call it after any change to the state
   scheduleSave: () => void;
   // Step to select the next time its sequence is opened, consumed by Sequences
@@ -593,6 +598,25 @@ export const createCore = ({
   // Looked up per label; rebuilding this map per call made naming 2k highlighted
   // sequences quadratic
   // Sequences are kept in creation order, so the last entry is the newest
+  const previewTemplate = (templateId: string, sequenceId?: string) => {
+    const text = templateText(templateId);
+    if (text === undefined) {
+      return { kind: "error" as const, message: "No such template" };
+    }
+    const before =
+      sequenceId === undefined
+        ? []
+        : (state.sequences.find((s) => s.id === sequenceId)?.steps ?? []);
+    const fillings = fillCaptures(
+      expandTemplate(text),
+      valuesBefore(before, text),
+    );
+    return {
+      kind: "ok" as const,
+      requests: fillings.map((filling) => filling.request),
+    };
+  };
+
   const renderingsOf = () => {
     const byTemplate = new Map<string, Rendering[]>();
     for (const sequence of state.sequences) {
@@ -1079,8 +1103,15 @@ export const createCore = ({
     return state.texts[templateId] ?? "";
   };
 
+  // The method and path shown for a template follow its request line
   const setTemplateText = (templateId: string, text: string) => {
     state.texts[templateId] = text;
+    const template = templatesById.value.get(templateId);
+    const line = /^[ \t]*([A-Z]+)[ \t]+(\S+)/m.exec(stripNotes(text));
+    if (template !== undefined && line !== null) {
+      template.method = line[1] ?? "";
+      template.path = line[2] ?? "";
+    }
   };
 
   // The method and path of the template a sequence's last step came from
@@ -1116,6 +1147,7 @@ export const createCore = ({
 
   return {
     state,
+    previewTemplate,
     renderingsOf,
     selectedSequenceOf,
     rowsOf,

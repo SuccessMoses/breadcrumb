@@ -1,0 +1,24 @@
+{
+  "name": "@caido-community/breadcrumb-cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "breadcrumb": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@caido-community/breadcrumb-core": "workspace:*",
+    "shared": "workspace:@caido-community/breadcrumb@*"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "tsdown": "0.22.3"
+  }
+}
