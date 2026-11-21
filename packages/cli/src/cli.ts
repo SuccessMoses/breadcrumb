@@ -2,40 +2,8 @@
 import { existsSync } from "node:fs";
 
 import { type Flags, run } from "./commands";
+import { COMMAND_HELP, GUIDE, USAGE } from "./help";
 import { openStore } from "./store";
-
-const USAGE = `Usage: breadcrumb <project.json> <command> [options]
-
-Reading
-  add <file.http>                    add a request template from a file
-  templates                          list request templates
-  sequences                          list every sequence
-  tree-summary                       size and shape of the trees
-  tree [--under ID] [--depth N] [--limit N] [--cursor N]
-                                     one page of a tree, depth first
-  find <text> [--limit N]            sequences that mention the text
-  path <sequence-id>                 labels from the root down to a sequence
-  show <sequence-id> [--max-bytes N] [--full]
-                                     steps, requests and responses
-  check <template-id>                problems with a template's request
-  preview <template-id> [--sequence ID]
-                                     the requests it would send, without sending
-
-Sending
-  extend <parent-id> <template-id>   send a template after a sequence
-  grow --from IDS --templates IDS [--generations N] [--max N] [--ready-only]
-                                     send templates after many sequences, with a cap
-  rerun <sequence-id>                send every step of a sequence again
-
-Other
-  init                               create an empty project file
-
-Options
-  --json                             print JSON
-  --ready-only                       grow only from sequences whose requests were sent
-  --insecure                         accept certificates that do not verify
-  --tls / --plain                    force TLS on or off for a request
-`;
 
 // Flags that take a value; every other --flag is on or off
 const VALUED = new Set([
@@ -73,6 +41,28 @@ const parse = (argv: string[]) => {
 const main = async (): Promise<number> => {
   const { positionals, flags } = parse(process.argv.slice(2));
   const [file, command, ...args] = positionals;
+  // Help needs no project file: "help [command]" and "guide" come first
+  if (file === "help") {
+    if (command === undefined) {
+      process.stdout.write(USAGE);
+      return 0;
+    }
+    const text = COMMAND_HELP[command];
+    if (text === undefined) {
+      process.stderr.write(`unknown command ${command}\n${USAGE}`);
+      return 2;
+    }
+    process.stdout.write(`${text}\n`);
+    return 0;
+  }
+  if (file === "guide") {
+    process.stdout.write(GUIDE);
+    return 0;
+  }
+  if (flags.help === true && command !== undefined) {
+    process.stdout.write(`${COMMAND_HELP[command] ?? USAGE}\n`);
+    return 0;
+  }
   if (flags.help === true || file === undefined || command === undefined) {
     process.stdout.write(USAGE);
     return flags.help === true ? 0 : 2;
