@@ -92,10 +92,24 @@ const menuItems = computed(() => {
   ];
 });
 
+// Where the menu opened, so its submenu can stop at the bottom of the window
+const menuTop = ref(0);
+// The submenu hangs below its item and PrimeVue does not flip it, so it is limited
+// to the room left under the click and scrolls, instead of running off the window
+const menuPt = computed(() => ({
+  submenu: {
+    style: {
+      maxHeight: `${Math.max(120, window.innerHeight - menuTop.value - 24)}px`,
+      overflowY: "auto",
+    },
+  },
+}));
+
 const openMenu = (event: MouseEvent, template: RequestTemplate) => {
   menuIds.value = picked.value.has(template.id)
     ? [...picked.value]
     : [template.id];
+  menuTop.value = event.clientY;
   menu.value?.show(event);
 };
 
@@ -645,6 +659,6 @@ onMounted(() => {
       </SplitterPanel>
     </Splitter>
 
-    <ContextMenu ref="menu" :model="menuItems" />
+    <ContextMenu ref="menu" :model="menuItems" :pt="menuPt" />
   </div>
 </template>
