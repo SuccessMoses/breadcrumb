@@ -89,6 +89,12 @@ type SequenceRow = {
 
 export type Workspace = {
   state: WorkspaceState;
+  exportBackup: () => string;
+  importBackup: (
+    text: string,
+  ) =>
+    | { kind: "ok"; templates: number; sequences: number }
+    | { kind: "error"; message: string };
   templatesById: ComputedRef<Map<string, RequestTemplate>>;
   // Every step rendered from a template, oldest first
   renderings: ComputedRef<Map<string, Rendering[]>>;
@@ -418,50 +424,67 @@ export const createWorkspace = (
     focusTemplate.value = undefined;
     return templateId;
   };
-  if (isState(stored)) {
-    state.templates = stored.templates;
-    state.sequences = restoreSequences(stored.sequences, stored.templates);
-    state.trees = restoreTrees(
-      hasKey(stored, "trees") ? stored.trees : undefined,
-    );
-    state.folds = restoreFolds(
-      hasKey(stored, "folds") ? stored.folds : undefined,
-    );
-    state.selectedTreeId =
-      hasKey(stored, "selectedTreeId") &&
-      typeof stored.selectedTreeId === "string"
-        ? stored.selectedTreeId
-        : undefined;
-    state.selectedSequenceId =
-      hasKey(stored, "selectedSequenceId") &&
-      typeof stored.selectedSequenceId === "string"
-        ? stored.selectedSequenceId
-        : undefined;
-    state.collections = restoreCollections(
-      hasKey(stored, "collections") ? stored.collections : undefined,
-    );
-    state.templateCollection = restoreStrings(
-      hasKey(stored, "templateCollection")
-        ? stored.templateCollection
-        : undefined,
-    );
-    state.texts = restoreStrings(
-      hasKey(stored, "texts") ? stored.texts : undefined,
-    );
-    state.rules = restoreRules(
-      hasKey(stored, "rules") ? stored.rules : undefined,
-    );
-  }
+  // Replaces the state with saved data, from storage or a backup file. Data
+  // that is not a saved state leaves the state as it is.
+  const applySaved = (saved: unknown) => {
+    if (isState(saved)) {
+      state.templates = saved.templates;
+      state.sequences = restoreSequences(saved.sequences, saved.templates);
+      state.trees = restoreTrees(
+        hasKey(saved, "trees") ? saved.trees : undefined,
+      );
+      state.folds = restoreFolds(
+        hasKey(saved, "folds") ? saved.folds : undefined,
+      );
+      state.selectedTreeId =
+        hasKey(saved, "selectedTreeId") &&
+        typeof saved.selectedTreeId === "string"
+          ? saved.selectedTreeId
+          : undefined;
+      state.selectedSequenceId =
+        hasKey(saved, "selectedSequenceId") &&
+        typeof saved.selectedSequenceId === "string"
+          ? saved.selectedSequenceId
+          : undefined;
+      state.collections = restoreCollections(
+        hasKey(saved, "collections") ? saved.collections : undefined,
+      );
+      state.templateCollection = restoreStrings(
+        hasKey(saved, "templateCollection")
+          ? saved.templateCollection
+          : undefined,
+      );
+      state.texts = restoreStrings(
+        hasKey(saved, "texts") ? saved.texts : undefined,
+      );
+      state.rules = restoreRules(
+        hasKey(saved, "rules") ? saved.rules : undefined,
+      );
+    }
 
-  // Every template starts in the Default collection, which always exists
-  if (!state.collections.some((c) => c.id === DEFAULT_COLLECTION_ID)) {
-    state.collections.unshift({ id: DEFAULT_COLLECTION_ID, name: "Default" });
-  }
+    // Every template starts in the Default collection, which always exists
+    if (!state.collections.some((c) => c.id === DEFAULT_COLLECTION_ID)) {
+      state.collections.unshift({ id: DEFAULT_COLLECTION_ID, name: "Default" });
+    }
+  };
+  applySaved(stored);
 
   // Saves the project after a short pause, so a burst of changes (such as a Grow
   // creating many sequences) is written once. Selection changes are not saved on
   // their own; the selection goes with the next save.
   let saveTimer: number | undefined;
+  const snapshot = () => ({
+    templates: state.templates,
+    sequences: state.sequences,
+    trees: state.trees,
+    folds: state.folds,
+    selectedTreeId: state.selectedTreeId,
+    selectedSequenceId: state.selectedSequenceId,
+    texts: state.texts,
+    collections: state.collections,
+    templateCollection: state.templateCollection,
+    rules: state.rules,
+  });
   const save = () => {
     const current = readRoot(sdk);
     // Keep the other keys (such as settings) that share the storage root
@@ -469,20 +492,53 @@ export const createWorkspace = (
       ...current,
       projects: {
         ...readProjects(current),
-        [projectId]: {
-          templates: state.templates,
-          sequences: state.sequences,
-          trees: state.trees,
-          folds: state.folds,
-          selectedTreeId: state.selectedTreeId,
-          selectedSequenceId: state.selectedSequenceId,
-          texts: state.texts,
-          collections: state.collections,
-          templateCollection: state.templateCollection,
-          rules: state.rules,
-        },
+        [projectId]: snapshot(),
       },
     });
+  };
+
+  // A backup file holds the same data as storage, in a format with a version so
+  // a later version of the plugin can tell what it is reading
+  const BACKUP_FORMAT = "breadcrumb-backup";
+  const exportBackup = (): string =>
+    JSON.stringify(
+      {
+        format: BACKUP_FORMAT,
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        state: snapshot(),
+      },
+      null,
+      2,
+    );
+
+  // Replaces this project's data with a backup file's. Nothing changes if the
+  // file is not a Breadcrumb backup.
+  const importBackup = (
+    text: string,
+  ):
+    | { kind: "ok"; templates: number; sequences: number }
+    | { kind: "error"; message: string } => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return { kind: "error", message: "The file is not valid JSON" };
+    }
+    if (!hasKey(parsed, "format") || parsed.format !== BACKUP_FORMAT) {
+      return { kind: "error", message: "This is not a Breadcrumb backup" };
+    }
+    if (!hasKey(parsed, "state") || !isState(parsed.state)) {
+      return { kind: "error", message: "The backup holds no Breadcrumb data" };
+    }
+    const saved = parsed.state;
+    applySaved(saved);
+    ensureTrees();
+    return {
+      kind: "ok",
+      templates: state.templates.length,
+      sequences: state.sequences.length,
+    };
   };
   watch(
     () => [
@@ -1108,6 +1164,8 @@ export const createWorkspace = (
     setFocusTemplate,
     consumeFocusTemplate,
     importTemplates,
+    exportBackup,
+    importBackup,
     extendSequence,
     grow,
     deleteSequence,
