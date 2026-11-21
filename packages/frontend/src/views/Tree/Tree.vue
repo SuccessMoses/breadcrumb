@@ -559,6 +559,20 @@ const toggleSubtree = (id: string) => {
   selected.value = next;
 };
 
+// Ctrl+Shift-click adds every sequence below one, but not the sequence itself, or
+// removes them if they were all selected
+const toggleDescendants = (id: string) => {
+  const descendants = subtreeOf(id).slice(1);
+  if (descendants.length === 0) return;
+  const allSelected = descendants.every((rowId) => selected.value.has(rowId));
+  const next = new Set(selected.value);
+  for (const rowId of descendants) {
+    if (allSelected) next.delete(rowId);
+    else next.add(rowId);
+  }
+  selected.value = next;
+};
+
 watch(visibleRows, (rows) => {
   const visible = new Set(rows.map((row) => row.sequence.id));
   if ([...selected.value].every((id) => visible.has(id))) return;
@@ -923,7 +937,12 @@ const openSequence = (sequence: Sequence) => {
 
 // Clicking a sequence's name or method highlights it and its path; clicking it
 // again opens it. Shift-click batches the sequence and its children instead.
+// Ctrl+Shift-click batches only the children, leaving the sequence itself out.
 const clickRow = (sequence: Sequence, event: MouseEvent) => {
+  if (event.shiftKey && event.ctrlKey) {
+    toggleDescendants(sequence.id);
+    return;
+  }
   if (event.shiftKey) {
     toggleSubtree(sequence.id);
     return;
