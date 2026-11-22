@@ -66,9 +66,11 @@ export type WorkspaceState = {
 // the values its captures produced. A failure stops the sequence it is in.
 type Rendered = {
   request: string;
+  // The error message when the request failed and the render went on anyway
   response: string | undefined;
   captured: Record<string, string[]>;
   choice: Record<string, string>;
+  failure: string | undefined;
 };
 
 // A template renders to one request per combination of its {{name|*}} values,
@@ -744,6 +746,7 @@ export const createCore = ({
     templateId: string,
     before: SequenceStep[],
     fixed: Record<string, string> = {},
+    softFailure = false,
   ): Promise<RenderResult> => {
     const fillings = fillCaptures(
       expandTemplate(text),
@@ -755,25 +758,34 @@ export const createCore = ({
     const results: Rendered[] = [];
     for (const filling of fillings) {
       let response: string | undefined;
+      let failure: string | undefined;
       // Whether this copy of the template is sent is set by its own command line
       if (sendWhenRendered(text)) {
         const sent = await adapter.sendRaw(filling.request);
-        if (sent.kind === "Error")
-          return { kind: "error", message: sent.error };
-        response = sent.value;
+        if (sent.kind === "Error") {
+          if (!softFailure) return { kind: "error", message: sent.error };
+          // The error stands in for the response, so the step still shows why
+          failure = sent.error;
+        }
+        response = sent.kind === "Ok" ? sent.value : sent.error;
       }
 
       const subject =
         response === undefined
           ? filling.request
           : filling.request + RESPONSE_DIVIDER + response;
-      const result = runCaptures(captures, subject);
+      // A failed request has no response for captures to read
+      const result =
+        failure === undefined
+          ? runCaptures(captures, subject)
+          : { kind: "ok" as const, values: {} };
       if (result.kind === "error") return result;
       results.push({
         request: filling.request,
         response,
         captured: result.values,
         choice: filling.choice,
+        failure,
       });
     }
     return { kind: "ok", results };
@@ -795,7 +807,8 @@ export const createCore = ({
     parentId: string,
     templateId: string,
   ): Promise<
-    { kind: "ok"; ids: string[] } | { kind: "error"; message: string }
+    | { kind: "ok"; children: { id: string; failure: string | undefined }[] }
+    | { kind: "error"; message: string }
   > => {
     const parent = state.sequences.find((s) => s.id === parentId);
     const template = templatesById.value.get(templateId);
@@ -817,16 +830,17 @@ export const createCore = ({
       );
       if (rendered.kind === "error") return rendered;
       const first = rendered.results[0];
-      if (first === undefined) return { kind: "ok", ids: [] };
+      if (first === undefined) return { kind: "ok", children: [] };
       prefix.push(stepFrom(inherited.templateId, text, first));
     }
 
     const text = templateText(templateId);
     if (text === undefined)
       return { kind: "error", message: "Missing template" };
-    const rendered = await renderStep(text, templateId, prefix);
+    // A failed request still makes its child, with the error as the response
+    const rendered = await renderStep(text, templateId, prefix, {}, true);
     if (rendered.kind === "error") return rendered;
-    const ids: string[] = [];
+    const children: { id: string; failure: string | undefined }[] = [];
     for (const result of rendered.results) {
       // Each sibling has its own step records, so none is shared between sequences
       const child: Sequence = {
@@ -839,9 +853,9 @@ export const createCore = ({
         ],
       };
       state.sequences.push(child);
-      ids.push(child.id);
+      children.push({ id: child.id, failure: result.failure });
     }
-    return { kind: "ok", ids };
+    return { kind: "ok", children };
   };
 
   // Extends one sequence and selects the new child. Resolves to an error message
@@ -855,8 +869,16 @@ export const createCore = ({
       adapter.notify(result.message, { variant: "error" });
       return result.message;
     }
-    const last = result.ids[result.ids.length - 1];
-    if (last !== undefined) state.selectedSequenceId = last;
+    const last = result.children[result.children.length - 1];
+    if (last !== undefined) state.selectedSequenceId = last.id;
+    const failures = result.children.flatMap((child) =>
+      child.failure === undefined ? [] : [child.failure],
+    );
+    if (failures.length > 0) {
+      adapter.notify(`${failures.length} request(s) failed: ${failures[0]}`, {
+        variant: "error",
+      });
+    }
     return undefined;
   };
 
@@ -886,11 +908,18 @@ export const createCore = ({
             continue;
           }
           const result = await extendOne(parentId, templateId);
-          if (result.kind === "ok") {
-            next.push(...result.ids);
-            created += result.ids.length;
-          } else {
+          if (result.kind === "error") {
             pruned += 1;
+            continue;
+          }
+          // A failed child stays in the tree but is not extended further
+          for (const child of result.children) {
+            if (child.failure === undefined) {
+              next.push(child.id);
+              created += 1;
+            } else {
+              pruned += 1;
+            }
           }
         }
       }
