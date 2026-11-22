@@ -203,6 +203,20 @@ const openTemplate = (step: SequenceStep) => {
 };
 
 // Deletes the shown sequence and everything under it; the root cannot be deleted
+// Copies the shown sequence as JSON, with its steps, for pasting elsewhere
+const copyShownAsJson = async () => {
+  const sequence = shown.value;
+  if (sequence === undefined) return;
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(sequence, null, 2));
+    sdk.window.showToast("Copied sequence as JSON", { variant: "success" });
+  } catch {
+    sdk.window.showToast("Could not copy to the clipboard", {
+      variant: "error",
+    });
+  }
+};
+
 const deleteShown = () => {
   const sequence = shown.value;
   if (sequence === undefined || sequence.parentId === undefined) return;
@@ -264,6 +278,14 @@ watch(
 <template>
   <div class="h-full flex flex-col gap-3 p-3">
     <div class="flex justify-end gap-2">
+      <Button
+        label="Copy as JSON"
+        size="small"
+        severity="secondary"
+        icon="fas fa-copy"
+        :disabled="shown === undefined"
+        @click="copyShownAsJson"
+      />
       <Button
         label="Delete"
         size="small"
