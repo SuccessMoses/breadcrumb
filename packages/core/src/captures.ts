@@ -61,8 +61,7 @@ const listItems = (body: string): string[] => [
   ),
 ];
 
-// Used when no dict or capture gives the name a value. int has no finite list,
-// so it needs a range in brackets.
+// Used when no dict or capture gives the name a value
 const BUILTINS: Record<string, string[] | undefined> = {
   bool: ["true", "false"],
   char: listItems("a-z,A-Z"),
