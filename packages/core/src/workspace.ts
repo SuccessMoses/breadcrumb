@@ -624,6 +624,17 @@ export const createCore = ({
   // Looked up per label; rebuilding this map per call made naming 2k highlighted
   // sequences quadratic
   // Sequences are kept in creation order, so the last entry is the newest
+  // Fills the values in first, then gives every copy its own {random} values. A
+  // fan-out over {{name|*}} therefore never gives two copies the same name.
+  const fillTemplate = (
+    text: string,
+    before: SequenceStep[],
+    fixed: Record<string, string> = {},
+  ) =>
+    fillCaptures(stripNotes(text), valuesBefore(before, text), fixed).map(
+      (filling) => ({ ...filling, request: expandTemplate(filling.request) }),
+    );
+
   const previewTemplate = (templateId: string, sequenceId?: string) => {
     const text = templateText(templateId);
     if (text === undefined) {
@@ -633,10 +644,7 @@ export const createCore = ({
       sequenceId === undefined
         ? []
         : (state.sequences.find((s) => s.id === sequenceId)?.steps ?? []);
-    const fillings = fillCaptures(
-      expandTemplate(text),
-      valuesBefore(before, text),
-    );
+    const fillings = fillTemplate(text, before);
     return {
       kind: "ok" as const,
       requests: fillings.map((filling) => filling.request),
@@ -748,11 +756,7 @@ export const createCore = ({
     fixed: Record<string, string> = {},
     softFailure = false,
   ): Promise<RenderResult> => {
-    const fillings = fillCaptures(
-      expandTemplate(text),
-      valuesBefore(before, text),
-      fixed,
-    );
+    const fillings = fillTemplate(text, before, fixed);
     const captures = captureLines(text);
 
     const results: Rendered[] = [];
