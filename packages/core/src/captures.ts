@@ -165,6 +165,11 @@ export const unmetNames = (
   return [...unmet];
 };
 
+// The key of a fan-out slot: a dict name is shared by all its placeholders, and an
+// inline list belongs to the one placeholder at position at
+const slotOf = (source: Source, at: number): string =>
+  source.kind === "list" ? `${source.key}@${at}` : source.key;
+
 // One rendering of a template: the request, and the value each fan-out source
 // gave it (by source key)
 type Filling = { request: string; choice: Record<string, string> };
@@ -181,6 +186,7 @@ export const fillCaptures = (
   const pieces = [...text.matchAll(PLACEHOLDER)].map((match) => ({
     whole: match[0],
     piece: parsePiece(match[1] ?? ""),
+    at: match.index,
   }));
 
   // The single values, by the whole placeholder text they fill
@@ -192,38 +198,43 @@ export const fillCaptures = (
     if (value !== undefined) single.set(whole, value);
   }
 
-  // Every combination of the fan-out values; a source repeated keeps one value
+  // Every combination of the fan-out values. A dict name repeated keeps one value;
+  // each inline list is its own fan-out, so identical lists in two places differ.
   const fanned = new Map<string, Source>();
-  for (const { piece } of pieces) {
+  for (const { piece, at } of pieces) {
     if (piece.kind === "value" && piece.index === "*") {
-      fanned.set(piece.source.key, piece.source);
+      fanned.set(slotOf(piece.source, at), piece.source);
     }
   }
   let combinations: Record<string, string>[] = [{}];
-  for (const source of fanned.values()) {
+  for (const [slot, source] of fanned) {
     const options = (listOf(source, values) ?? []).filter(
-      (value) => fixed[source.key] === undefined || value === fixed[source.key],
+      (value) => fixed[slot] === undefined || value === fixed[slot],
     );
     combinations = combinations.flatMap((choice) =>
-      options.map((value) => ({ ...choice, [source.key]: value })),
+      options.map((value) => ({ ...choice, [slot]: value })),
     );
   }
 
   return combinations.map((choice) => {
     // What each {{... as name}} chose in this rendering
     const bound: Record<string, string> = {};
-    for (const { whole, piece } of pieces) {
+    for (const { whole, piece, at } of pieces) {
       if (piece.kind !== "value" || piece.bind === undefined) continue;
       const value =
-        piece.index === "*" ? choice[piece.source.key] : single.get(whole);
+        piece.index === "*"
+          ? choice[slotOf(piece.source, at)]
+          : single.get(whole);
       if (value !== undefined) bound[piece.bind] = value;
     }
     return {
       choice,
-      request: text.replace(PLACEHOLDER, (whole, inner: string) => {
+      request: text.replace(PLACEHOLDER, (whole, inner: string, at: number) => {
         const piece = parsePiece(inner);
         if (piece.kind === "reference") return bound[piece.name] ?? whole;
-        if (piece.index === "*") return choice[piece.source.key] ?? whole;
+        if (piece.index === "*") {
+          return choice[slotOf(piece.source, at)] ?? whole;
+        }
         return single.get(whole) ?? whole;
       }),
     };
