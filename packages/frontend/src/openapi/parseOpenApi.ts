@@ -4,7 +4,6 @@ import {
   type ParameterLocation,
   type RequestTemplate,
   type Result,
-  type TemplateAuth,
   type TemplateParameter,
 } from "shared";
 
@@ -140,39 +139,6 @@ const serverUrl = (root: Obj): string => {
   return isObject(first) && typeof first.url === "string" ? first.url : "";
 };
 
-const authFrom = (root: Obj, operation: Obj): TemplateAuth | undefined => {
-  const requirements = Array.isArray(operation.security)
-    ? operation.security
-    : root.security;
-  const components: Obj = isObject(root.components) ? root.components : {};
-  const schemes: Obj = isObject(components.securitySchemes)
-    ? components.securitySchemes
-    : {};
-  if (!Array.isArray(requirements)) return undefined;
-
-  for (const requirement of requirements) {
-    if (!isObject(requirement)) continue;
-    for (const schemeName of Object.keys(requirement)) {
-      const scheme = resolveRef(root, schemes[schemeName]);
-      if (!isObject(scheme)) continue;
-      if (scheme.type === "http" && scheme.scheme === "bearer") {
-        return { name: "Authorization", value: "Bearer <token>" };
-      }
-      if (scheme.type === "http" && scheme.scheme === "basic") {
-        return { name: "Authorization", value: "Basic <credentials>" };
-      }
-      if (
-        scheme.type === "apiKey" &&
-        scheme.in === "header" &&
-        typeof scheme.name === "string"
-      ) {
-        return { name: scheme.name, value: `<${scheme.name}>` };
-      }
-    }
-  }
-  return undefined;
-};
-
 const pathTemplates = (
   root: Obj,
   baseUrl: string,
@@ -204,7 +170,6 @@ const pathTemplates = (
           parameterList(root, operation.parameters),
         ),
         body: requestBody(root, operation.requestBody),
-        auth: authFrom(root, operation),
       },
     ];
   });

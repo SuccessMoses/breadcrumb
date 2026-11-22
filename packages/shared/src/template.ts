@@ -6,11 +6,6 @@ export type TemplateParameter = {
   required: boolean;
 };
 
-export type TemplateAuth = {
-  name: string;
-  value: string;
-};
-
 export type RequestTemplate = {
   id: string;
   method: string;
@@ -20,5 +15,4 @@ export type RequestTemplate = {
   summary: string | undefined;
   parameters: TemplateParameter[];
   body: string | undefined;
-  auth: TemplateAuth | undefined;
 };

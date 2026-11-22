@@ -1,7 +1,6 @@
 import type {
   ParameterLocation,
   RequestTemplate,
-  TemplateAuth,
   TemplateParameter,
 } from "shared";
 
@@ -36,7 +35,6 @@ export const templatesToJson = (entries: TemplateEntry[]) =>
         summary: template.summary,
         parameters: template.parameters,
         body: template.body,
-        auth: template.auth,
       })),
     },
     null,
@@ -58,13 +56,6 @@ const parseParameter = (value: unknown): TemplateParameter | undefined => {
   const kind: ParameterLocation = location;
   return { name, in: kind, required };
 };
-
-const parseAuth = (value: unknown): TemplateAuth | undefined =>
-  isRecord(value) &&
-  typeof value.name === "string" &&
-  typeof value.value === "string"
-    ? { name: value.name, value: value.value }
-    : undefined;
 
 // A request without a method, path, URL or text is refused. Optional fields that
 // are the wrong type are dropped, so a hand-written file still imports.
@@ -95,7 +86,6 @@ const parseItem = (value: unknown): TemplateItem | undefined => {
       typeof value.operationId === "string" ? value.operationId : undefined,
     summary: typeof value.summary === "string" ? value.summary : undefined,
     body: typeof value.body === "string" ? value.body : undefined,
-    auth: parseAuth(value.auth),
     parameters,
   };
 };

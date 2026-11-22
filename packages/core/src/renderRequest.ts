@@ -30,9 +30,6 @@ export const defaultRequest = (template: RequestTemplate): string => {
     ...template.parameters
       .filter((parameter) => parameter.in === "header")
       .map((parameter) => `${parameter.name}: <${parameter.name}>`),
-    ...(template.auth === undefined
-      ? []
-      : [`${template.auth.name}: ${template.auth.value}`]),
     ...(template.body === undefined ? [] : ["Content-Type: application/json"]),
   ];
   const head = [`${template.method} ${target} HTTP/1.1`, ...headers].join(

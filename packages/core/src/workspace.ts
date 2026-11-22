@@ -797,7 +797,6 @@ export const createCore = ({
       summary: undefined,
       parameters: [],
       body: undefined,
-      auth: undefined,
     };
     state.templates.push(template);
     state.texts[template.id] = "";
