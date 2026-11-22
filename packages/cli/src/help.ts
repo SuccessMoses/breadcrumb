@@ -79,7 +79,6 @@ Templates
     {{char|*}}      builtin letters a-z and A-Z
     {{[1..12]|*}}   a list in brackets: ranges (1..12, 1...12, A-Za-z) and items
     {{[1..12]|* as day}}   bind the value chosen, then {{$day}} reuses it
-  int has no finite list, so give it a range in brackets.
   A comment line starts with "# " and is never sent. Template commands also start
   with "# " and are read as commands:
     # \`\`dict name = a, b          seed values for name
