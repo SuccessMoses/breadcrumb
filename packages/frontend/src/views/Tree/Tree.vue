@@ -665,10 +665,49 @@ const rerenderSelected = async () => {
 const MAX_GENERATIONS = 5;
 const growDialog = ref(false);
 const growSources = ref<Sequence[]>([]);
-const growTypes = ref<string[]>([]);
+// The picks and ready-only setting are kept in this browser, so a reload does not
+// clear them. Stale template ids are dropped when the popup opens.
+const EXTEND_PICKS_KEY = "breadcrumb.extendPicks";
+const rememberedPicks = (): { types: string[]; readyOnly: boolean } => {
+  try {
+    const raw = window.localStorage.getItem(EXTEND_PICKS_KEY);
+    const value = raw === null ? undefined : (JSON.parse(raw) as unknown);
+    if (typeof value !== "object" || value === null) {
+      return { types: [], readyOnly: false };
+    }
+    const { types, readyOnly } = value as Record<string, unknown>;
+    return {
+      types: Array.isArray(types)
+        ? types.filter((id): id is string => typeof id === "string")
+        : [],
+      readyOnly: readyOnly === true,
+    };
+  } catch {
+    return { types: [], readyOnly: false };
+  }
+};
+const remembered = rememberedPicks();
+const growTypes = ref<string[]>(remembered.types);
 const growSearch = ref("");
 const growGenerations = ref(1);
-const growReadyOnly = ref(false);
+const growReadyOnly = ref(remembered.readyOnly);
+watch(
+  [growTypes, growReadyOnly],
+  () => {
+    try {
+      window.localStorage.setItem(
+        EXTEND_PICKS_KEY,
+        JSON.stringify({
+          types: growTypes.value,
+          readyOnly: growReadyOnly.value,
+        }),
+      );
+    } catch {
+      // Storage can be unavailable; the picks then last until the reload
+    }
+  },
+  { deep: true },
+);
 const growRunning = ref(false);
 const growStopRequested = ref(false);
 
