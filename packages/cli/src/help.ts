@@ -75,6 +75,11 @@ Templates
     {{name}}        the last value captured or seeded for name
     {{name|1}}      the first value, {{name|2}} the second
     {{name|*}}      one child for each value (fans out)
+    {{bool|*}}      builtin bool (true, false) unless a dict defines bool
+    {{char|*}}      builtin letters a-z and A-Z
+    {{[1..12]|*}}   a list in brackets: ranges (1..12, 1...12, A-Za-z) and items
+    {{[1..12]|* as day}}   bind the value chosen, then {{$day}} reuses it
+  int has no finite list, so give it a range in brackets.
   A comment line starts with "# " and is never sent. Template commands also start
   with "# " and are read as commands:
     # \`\`dict name = a, b          seed values for name
