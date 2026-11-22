@@ -1395,7 +1395,8 @@ const clearHighlight = () => {
           </span>
           <Button
             v-if="growRunning"
-            label="Stop"
+            :label="growStopRequested ? 'Stopping…' : 'Stop'"
+            :disabled="growStopRequested"
             size="small"
             severity="secondary"
             @click="growStopRequested = true"

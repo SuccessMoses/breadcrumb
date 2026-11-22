@@ -4,6 +4,7 @@ import {
   emptyState,
   isState,
   type Rendering,
+  type SendResult,
   type SequenceRow,
   type WorkspaceState,
 } from "@caido-community/breadcrumb-core";
@@ -27,6 +28,27 @@ export type Workspace = CoreWorkspace & {
   selectedSequence: ComputedRef<Sequence | undefined>;
   rows: ComputedRef<SequenceRow[]>;
 };
+
+// A request the server never answers would hold up a grow for as long as the
+// backend waits, so after this long it counts as failed
+const SEND_TIMEOUT_MS = 15000;
+
+const sendWithTimeout = (send: Promise<SendResult>): Promise<SendResult> =>
+  // eslint-disable-next-line compat/compat -- the plugin frontend runs in a browser that has Promise
+  new Promise((resolve) => {
+    const timer = window.setTimeout(
+      () =>
+        resolve({
+          kind: "Error",
+          error: `No response after ${SEND_TIMEOUT_MS / 1000} s`,
+        }),
+      SEND_TIMEOUT_MS,
+    );
+    void send.then((result) => {
+      window.clearTimeout(timer);
+      resolve(result);
+    });
+  });
 
 // Storage holds one snapshot per Caido project, under "projects"
 const readRoot = (sdk: FrontendSDK): Record<string, unknown> => {
@@ -83,7 +105,7 @@ export const createWorkspace = (
         };
         sdk.storage.set({ ...current, projects });
       },
-      sendRaw: (raw) => sdk.backend.sendRaw(raw),
+      sendRaw: (raw) => sendWithTimeout(sdk.backend.sendRaw(raw)),
       notify: (message, options) => sdk.window.showToast(message, options),
       schedule: (run, delayMs) => {
         const id = window.setTimeout(run, delayMs);
