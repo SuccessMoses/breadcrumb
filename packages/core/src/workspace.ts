@@ -16,6 +16,11 @@ import {
 } from "./notes";
 import { defaultRequest, expandTemplate } from "./renderRequest";
 import { restoreSeqRules, type SeqRule } from "./rules";
+import {
+  parseTemplatesJson,
+  type TemplateItem,
+  templatesToJson,
+} from "./templateJson";
 import { expandUploads } from "./uploads";
 
 // Something read and written through .value, as a Vue ref is
@@ -134,6 +139,12 @@ export type CoreWorkspace = {
     skipped: number;
   };
   addEmptyTemplate: () => string;
+  exportTemplatesJson: () => string;
+  importTemplatesJson: (
+    text: string,
+  ) =>
+    | { kind: "ok"; created: number; updated: number }
+    | { kind: "error"; message: string };
   // Resolves to an error message if rendering stopped, otherwise undefined
   extendSequence: (
     parentId: string,
@@ -721,6 +732,64 @@ export const createCore = ({
     return { added, skipped: templates.length - added };
   };
 
+  const collectionName = (templateId: string) =>
+    state.collections.find((c) => c.id === collectionOf(templateId))?.name ??
+    "";
+
+  const exportTemplatesJson = () =>
+    templatesToJson(
+      state.templates.map((template) => ({
+        template,
+        collection: collectionName(template.id),
+        text: state.texts[template.id] ?? "",
+      })),
+    );
+
+  // The collection with this name, created if there is none. A blank name is Default.
+  const collectionNamed = (name: string) => {
+    const trimmed = name.trim();
+    if (trimmed === "") return DEFAULT_COLLECTION_ID;
+    const found = state.collections.find((c) => c.name === trimmed);
+    if (found !== undefined) return found.id;
+    const created = { id: newId(), name: trimmed };
+    state.collections.push(created);
+    return created.id;
+  };
+
+  // A request with the same method and path is overwritten, keeping its id;
+  // any other request is created. Requests already in the project are never removed.
+  const mergeTemplates = (items: TemplateItem[]) => {
+    let created = 0;
+    let updated = 0;
+    for (const item of items) {
+      const { collection, text, ...fields } = item;
+      const collectionId = collectionNamed(collection);
+      const existing = state.templates.find(
+        (t) =>
+          t.method.toUpperCase() === fields.method && t.path === fields.path,
+      );
+      if (existing !== undefined) {
+        Object.assign(existing, fields);
+        state.texts[existing.id] = text;
+        state.templateCollection[existing.id] = collectionId;
+        updated += 1;
+      } else {
+        const id = newId();
+        state.templates.push({ ...fields, id });
+        state.texts[id] = text;
+        state.templateCollection[id] = collectionId;
+        created += 1;
+      }
+    }
+    return { created, updated };
+  };
+
+  const importTemplatesJson = (text: string) => {
+    const parsed = parseTemplatesJson(text);
+    if (parsed.kind === "error") return parsed;
+    return { kind: "ok" as const, ...mergeTemplates(parsed.items) };
+  };
+
   // A new request with nothing in it, to be filled by hand
   const addEmptyTemplate = () => {
     const template: RequestTemplate = {
@@ -1285,6 +1354,8 @@ export const createCore = ({
     templateText,
     setTemplateText,
     addEmptyTemplate,
+    exportTemplatesJson,
+    importTemplatesJson,
     sequenceLabel,
     sequenceMethod,
     sequencePath,

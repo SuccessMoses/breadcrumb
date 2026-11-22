@@ -310,6 +310,40 @@ const onFileChange = async (event: Event) => {
   });
 };
 
+const jsonInput = ref<HTMLInputElement>();
+
+const copyTemplatesAsJson = async () => {
+  try {
+    await navigator.clipboard.writeText(workspace.exportTemplatesJson());
+    sdk.window.showToast("Copied requests as JSON", { variant: "success" });
+  } catch {
+    sdk.window.showToast("Could not copy to the clipboard", {
+      variant: "error",
+    });
+  }
+};
+
+const onJsonFileChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (file === undefined) return;
+
+  // The request being edited is saved first, so the import does not undo it
+  flushTemplate();
+  const result = workspace.importTemplatesJson(await file.text());
+  if (result.kind === "error") {
+    sdk.window.showToast(result.message, { variant: "error" });
+    return;
+  }
+  // An overwritten request may be the one open in the editor
+  showTemplateText();
+  sdk.window.showToast(
+    `Created ${result.created}, updated ${result.updated} request(s)`,
+    { variant: "success" },
+  );
+};
+
 watch(selectedTemplateId, showTemplateText);
 
 // Brings the request in the editor into view in the list: its collection is opened
@@ -373,6 +407,27 @@ onMounted(() => {
         icon="fas fa-file-import"
         size="small"
         @click="fileInput?.click()"
+      />
+      <Button
+        label="Copy as JSON"
+        icon="fas fa-copy"
+        size="small"
+        severity="secondary"
+        @click="copyTemplatesAsJson"
+      />
+      <Button
+        label="Import JSON"
+        icon="fas fa-file-import"
+        size="small"
+        severity="secondary"
+        @click="jsonInput?.click()"
+      />
+      <input
+        ref="jsonInput"
+        type="file"
+        accept=".json,application/json"
+        class="hidden"
+        @change="onJsonFileChange"
       />
       <Button
         icon="fas fa-plus"

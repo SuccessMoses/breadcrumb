@@ -6,6 +6,7 @@ export * from "./display";
 export * from "./notes";
 export * from "./renderRequest";
 export * from "./rules";
+export * from "./templateJson";
 export * from "./sequenceText";
 export * from "./uploads";
 export * from "./workspace";
