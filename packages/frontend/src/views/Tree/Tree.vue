@@ -61,6 +61,7 @@ const openTreeDialog = (mode: "create" | "rename") => {
 const saveTree = () => {
   const name = treeName.value.trim();
   if (name === "") return;
+  workspace.checkpoint();
   if (treeDialogMode.value === "create") {
     workspace.createTree(name);
   } else if (workspace.state.selectedTreeId !== undefined) {
@@ -86,6 +87,7 @@ const deleteCurrentTree = () => {
       : `Delete "${currentTreeName.value}" and every sequence in it?`,
   );
   if (!confirmed) return;
+  workspace.checkpoint();
   const removed = workspace.deleteTree(id);
   sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
     variant: "success",
@@ -403,13 +405,33 @@ const measureViewport = () => {
   viewportPx.value = treeScroll.value?.clientHeight ?? viewportPx.value;
 };
 
+// Ctrl+Z undoes the last tree change, unless a text field has the keyboard
+const undoOnCtrlZ = (event: KeyboardEvent) => {
+  if (!visible || !event.ctrlKey || event.shiftKey || event.altKey) return;
+  if (event.key.toLowerCase() !== "z") return;
+  const target = event.target;
+  if (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+  ) {
+    return;
+  }
+  event.preventDefault();
+  workspace.undo();
+};
+
 onMounted(() => {
   scrolledTo.value = treeScroll.value?.scrollTop ?? 0;
   measureViewport();
   window.addEventListener("resize", measureViewport);
+  window.addEventListener("keydown", undoOnCtrlZ);
 });
 
-onUnmounted(() => window.removeEventListener("resize", measureViewport));
+onUnmounted(() => {
+  window.removeEventListener("resize", measureViewport);
+  window.removeEventListener("keydown", undoOnCtrlZ);
+});
 
 // A hidden tab loses its scroll position, so the window is re-read when shown
 const syncScroll = () => {
@@ -605,6 +627,7 @@ const deleteSelected = () => {
     `Delete ${targets.length} sequence(s) and everything under them?`,
   );
   if (!confirmed) return;
+  workspace.checkpoint();
   let removed = 0;
   for (const target of targets) removed += workspace.deleteSequence(target.id);
   selected.value = new Set();
@@ -620,6 +643,7 @@ const rerenderSelected = async () => {
     `Re-render ${targets.length} sequence(s) and everything under them from their templates? Manual step edits will be replaced.`,
   );
   if (!confirmed) return;
+  workspace.checkpoint();
   let sequences = 0;
   let steps = 0;
   for (const target of targets) {
@@ -773,6 +797,7 @@ const runGrow = async () => {
   const sources = growSources.value;
   growRunning.value = true;
   growStopRequested.value = false;
+  workspace.checkpoint();
   const result = await workspace.grow({
     sequenceIds: sources.map((source) => source.id),
     templateIds: growTemplates.value.map((template) => template.id),
@@ -801,6 +826,7 @@ const deleteTarget = () => {
     `Delete "${workspace.sequenceLabel(target)}" and every sequence under it?`,
   );
   if (!confirmed) return;
+  workspace.checkpoint();
   const removed = workspace.deleteSequence(target.id);
   sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
     variant: "success",
@@ -844,6 +870,7 @@ const rerenderTarget = async () => {
     `Re-render "${workspace.sequenceLabel(target)}" and every sequence under it from its templates? Manual step edits will be replaced.`,
   );
   if (!confirmed) return;
+  workspace.checkpoint();
   const { sequences, steps, error } = await workspace.rerenderSequence(
     target.id,
   );
@@ -919,7 +946,9 @@ const menuItems = computed(() => {
 // A subtree shows the clicked sequence and everything under it, in its own tree
 const makeSubtreeTarget = () => {
   const target = extendTarget.value;
-  if (target !== undefined) workspace.makeSubtree(target.id);
+  if (target === undefined) return;
+  workspace.checkpoint();
+  workspace.makeSubtree(target.id);
 };
 
 // Right-clicking a batch-selected row acts on the whole batch

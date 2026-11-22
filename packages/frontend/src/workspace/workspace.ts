@@ -18,6 +18,10 @@ export { DEFAULT_COLLECTION_ID } from "@caido-community/breadcrumb-core";
 // from the state that update as it changes
 export type Workspace = CoreWorkspace & {
   templatesById: ComputedRef<Map<string, RequestTemplate>>;
+  // Saves the tree as it is now, so undo can return to it
+  checkpoint: () => void;
+  // Returns the tree to the last checkpoint; false when there is none
+  undo: () => boolean;
   // Every step rendered from a template, oldest first
   renderings: ComputedRef<Map<string, Rendering[]>>;
   selectedSequence: ComputedRef<Sequence | undefined>;
@@ -108,8 +112,38 @@ export const createWorkspace = (
     { deep: true },
   );
 
+  // Tree changes from the Tree tab are undone from these snapshots of the
+  // sequences, trees and selected tree, kept as JSON
+  const HISTORY_LIMIT = 50;
+  const history: string[] = [];
+  const checkpoint = () => {
+    history.push(
+      JSON.stringify({
+        sequences: state.sequences,
+        trees: state.trees,
+        selectedTreeId: state.selectedTreeId,
+      }),
+    );
+    if (history.length > HISTORY_LIMIT) history.shift();
+  };
+  const undo = (): boolean => {
+    const previous = history.pop();
+    if (previous === undefined) return false;
+    const snapshot = JSON.parse(previous) as Pick<
+      WorkspaceState,
+      "sequences" | "trees" | "selectedTreeId"
+    >;
+    state.sequences = snapshot.sequences;
+    state.trees = snapshot.trees;
+    state.selectedTreeId = snapshot.selectedTreeId;
+    core.scheduleSave();
+    return true;
+  };
+
   return {
     ...core,
+    checkpoint,
+    undo,
     templatesById,
     renderings: computed(() => core.renderingsOf()),
     selectedSequence: computed(() => core.selectedSequenceOf()),
