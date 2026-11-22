@@ -97,7 +97,6 @@ export const openStore = (file: string, options: SendOptions): Store => {
     },
     focusStep: { value: undefined },
     focusTemplate: { value: undefined },
-    highlighted: { value: [] },
     templatesById: indexed(() => state.templates),
     sequencesById: indexed(() => state.sequences),
   });

@@ -172,8 +172,6 @@ export type CoreWorkspace = {
   renameTree: (id: string, name: string) => void;
   deleteTree: (id: string) => number;
   makeSubtree: (id: string) => boolean;
-  highlighted: Ref<string[]>;
-  setHighlighted: (ids: string[]) => void;
   saveStepRequest: (
     sequenceId: string,
     stepId: string,
@@ -426,7 +424,6 @@ export const createCore = ({
   adapter,
   focusStep,
   focusTemplate,
-  highlighted,
   templatesById,
   sequencesById,
 }: {
@@ -434,7 +431,6 @@ export const createCore = ({
   adapter: Adapter;
   focusStep: Ref<string | undefined>;
   focusTemplate: Ref<string | undefined>;
-  highlighted: Ref<string[]>;
   templatesById: Ref<Map<string, RequestTemplate>>;
   sequencesById: Ref<Map<string, Sequence>>;
 }): CoreWorkspace => {
@@ -646,7 +642,7 @@ export const createCore = ({
 
   // Name each sequence after the alias of the template that created it (its
   // last step). Names are labels only; ids are what keep sequences apart.
-  // Looked up per label; rebuilding this map per call made naming 2k highlighted
+  // Looked up per label; rebuilding this map per call made naming 2k
   // sequences quadratic
   // Sequences are kept in creation order, so the last entry is the newest
   // Fills the values in first, then gives every copy its own {random} values. A
@@ -1049,12 +1045,10 @@ export const createCore = ({
     return doomed.size;
   };
 
-  // Switching trees clears the highlight, which belongs to the tree it was made in
   const selectTree = (id: string) => {
     if (!state.trees.some((tree) => tree.id === id)) return;
     state.selectedTreeId = id;
     state.selectedSequenceId = id;
-    highlighted.value = [];
   };
 
   const createTree = (name: string) => {
@@ -1099,16 +1093,8 @@ export const createCore = ({
     return true;
   };
 
-  // The sequences highlighted in the Tree; the Sequences tab lists them
-  const setHighlighted = (ids: string[]) => {
-    highlighted.value = ids;
-  };
-
   const selectSequence = (id: string) => {
     state.selectedSequenceId = id;
-    if (!highlighted.value.includes(id)) {
-      highlighted.value = [...highlighted.value, id];
-    }
   };
 
   // Regenerates the request of every step in a sequence and everything under it
@@ -1336,8 +1322,6 @@ export const createCore = ({
     renameTree,
     deleteTree,
     makeSubtree,
-    highlighted,
-    setHighlighted,
     setStepTemplate,
     setFolded,
     setTreeFolded,

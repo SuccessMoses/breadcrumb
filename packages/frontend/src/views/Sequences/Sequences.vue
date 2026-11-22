@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { runQuery, sequenceTexts } from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
+import InputText from "primevue/inputtext";
 import type { Sequence, SequenceStep } from "shared";
 import { computed, nextTick, ref, watch } from "vue";
 
@@ -25,12 +27,22 @@ const sending = ref(false);
 const requestEditors = new Map<string, EditorHandle>();
 const blocks = new Map<string, HTMLElement>();
 
-// The sequences highlighted in the Tree, in tree order
+// The query typed above the list, and what it matches
+const query = ref("");
+const texts = computed(() => sequenceTexts(workspace.state.sequences));
+const queryResult = computed(() =>
+  query.value.trim() === ""
+    ? undefined
+    : runQuery(query.value, workspace.state.sequences, texts.value),
+);
+
+// The sequences the query matches, in the order they were made. An empty query
+// lists all of them, and a query that does not parse lists none.
 const listed = computed<Sequence[]>(() => {
-  const ids = new Set(workspace.highlighted.value);
-  return workspace.rows.value
-    .map((row) => row.sequence)
-    .filter((sequence) => ids.has(sequence.id));
+  const result = queryResult.value;
+  if (result === undefined) return workspace.state.sequences;
+  if (result.kind === "error") return [];
+  return workspace.state.sequences.filter((s) => result.ids.has(s.id));
 });
 
 // The sequence whose steps are shown: the chosen one, else the first listed
@@ -225,12 +237,6 @@ const deleteShown = () => {
   );
   if (!confirmed) return;
   const removed = workspace.deleteSequence(sequence.id);
-  // Drop what no longer exists from the list, and show what is left
-  workspace.setHighlighted(
-    workspace.highlighted.value.filter((id) =>
-      workspace.state.sequences.some((s) => s.id === id),
-    ),
-  );
   shownId.value = undefined;
   sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
     variant: "success",
@@ -320,44 +326,63 @@ watch(
     </div>
 
     <div class="flex-1 min-h-0 flex gap-3">
-      <aside
-        class="w-[25.6rem] shrink-0 overflow-auto rounded border border-surface-700"
-      >
-        <div v-if="listed.length === 0" class="p-3 text-surface-400">
-          Highlight sequences in the Tree tab to view them here.
-        </div>
-        <div
-          v-for="sequence in listed"
-          :key="sequence.id"
-          class="cursor-pointer px-3 py-2"
-          :class="
-            sequence.id === shown?.id
-              ? 'bg-surface-800 text-surface-100'
-              : 'text-surface-300 hover:bg-surface-800'
-          "
-          @click="shownId = sequence.id"
+      <div class="w-[25.6rem] shrink-0 min-h-0 flex flex-col gap-1">
+        <InputText
+          v-model="query"
+          placeholder="Query, e.g. children(abc123) OR `POST /api/v4`"
+          size="small"
+          class="w-full font-mono"
+          spellcheck="false"
+        />
+        <p
+          v-if="queryResult?.kind === 'error'"
+          class="text-xs text-red-400 break-words"
         >
-          <div class="truncate text-sm">
-            {{ workspace.sequenceLabel(sequence) }}
-          </div>
-          <div class="text-xs text-surface-500">
-            {{ sequence.steps.length }} steps
+          {{ queryResult.message }}
+        </p>
+        <aside
+          class="flex-1 min-h-0 overflow-auto rounded border border-surface-700"
+        >
+          <div v-if="listed.length === 0" class="p-3 text-surface-400">
+            {{
+              queryResult === undefined
+                ? "No sequences yet."
+                : "No sequences match the query."
+            }}
           </div>
           <div
-            v-for="(step, index) in sequence.steps"
-            :key="step.id"
-            class="cursor-pointer truncate pl-3 pt-0.5 font-mono text-xs hover:text-surface-100"
+            v-for="sequence in listed"
+            :key="sequence.id"
+            class="cursor-pointer px-3 py-2"
             :class="
-              step.id === selectedStepId
-                ? 'text-surface-100'
-                : 'text-surface-400'
+              sequence.id === shown?.id
+                ? 'bg-surface-800 text-surface-100'
+                : 'text-surface-300 hover:bg-surface-800'
             "
-            @click.stop="showStep(sequence, step.id)"
+            @click="shownId = sequence.id"
           >
-            {{ index + 1 }}. {{ requestLine(step.request) }}
+            <div class="truncate text-sm">
+              {{ workspace.sequenceLabel(sequence) }}
+            </div>
+            <div class="text-xs text-surface-500">
+              {{ sequence.steps.length }} steps
+            </div>
+            <div
+              v-for="(step, index) in sequence.steps"
+              :key="step.id"
+              class="cursor-pointer truncate pl-3 pt-0.5 font-mono text-xs hover:text-surface-100"
+              :class="
+                step.id === selectedStepId
+                  ? 'text-surface-100'
+                  : 'text-surface-400'
+              "
+              @click.stop="showStep(sequence, step.id)"
+            >
+              {{ index + 1 }}. {{ requestLine(step.request) }}
+            </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      </div>
 
       <div
         class="flex-1 min-h-0 min-w-0 overflow-auto flex flex-col gap-3 pr-1"

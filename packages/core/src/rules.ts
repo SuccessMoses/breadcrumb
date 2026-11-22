@@ -1,7 +1,6 @@
 import type { Sequence } from "shared";
 
 import { RESPONSE_DIVIDER } from "./captures";
-import { compilePattern } from "./sequenceText";
 
 // A regex run against each whole sequence, as one string
 export type SeqRule = { id: string; name: string; pattern: string };
@@ -17,22 +16,6 @@ export const stringifySequence = (sequence: Sequence) =>
         (step.response === undefined ? "(no response)" : step.response),
     )
     .join("\x1e");
-
-// The ids of the sequences whose text matches the pattern
-export const matchSequences = (
-  sequences: Sequence[],
-  pattern: string,
-): { kind: "ok"; ids: string[] } | { kind: "error"; message: string } => {
-  const compiled = compilePattern(pattern);
-  if (compiled.kind === "error") return compiled;
-  const { regex } = compiled;
-  return {
-    kind: "ok",
-    ids: sequences
-      .filter((sequence) => regex.test(stringifySequence(sequence)))
-      .map((sequence) => sequence.id),
-  };
-};
 
 const hasText = (value: unknown): value is string => typeof value === "string";
 

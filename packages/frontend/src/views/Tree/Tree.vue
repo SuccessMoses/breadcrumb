@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import {
-  compilePattern,
   displayPath,
   methodColor,
   responseStatus,
-  sequenceText,
+  runQuery,
+  sequenceTexts,
 } from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
@@ -115,10 +115,14 @@ const resetSettings = () => {
   settings.value = { ...DEFAULT_TREE_SETTINGS };
 };
 
-const compiled = computed(() => {
-  const text = pattern.value.trim();
-  return text === "" ? undefined : compilePattern(text);
-});
+// The query's result, or undefined without a query. Built only when a query is
+// typed, so an empty filter costs nothing.
+const texts = computed(() => sequenceTexts(workspace.state.sequences));
+const queryResult = computed(() =>
+  pattern.value.trim() === ""
+    ? undefined
+    : runQuery(pattern.value, workspace.state.sequences, texts.value),
+);
 
 // Ids of the sequences whose children are hidden.
 // Folded sequences, remembered with the project
@@ -228,33 +232,16 @@ const expandAll = () => {
   collapsed.value = new Set();
 };
 
-// A regex search shows every match, so collapsing only applies without a filter.
-const filtering = computed(() => {
-  const match = compiled.value;
-  return match !== undefined && match.kind !== "error";
-});
-
-// The searchable text of each sequence, built once per change rather than on
-// every keystroke: a 2k-sequence tree would otherwise rebuild megabytes of text
-// per character typed into the filter.
-const textsById = computed(() => {
-  if (!filtering.value) return undefined;
-  const texts = new Map<string, string>();
-  for (const row of workspace.rows.value) {
-    texts.set(row.sequence.id, sequenceText(row.sequence));
-  }
-  return texts;
-});
+// A query shows every match, so collapsing only applies without a filter.
+// A query that does not parse shows every row, with its error under the filter.
+const filtering = computed(() => queryResult.value?.kind === "ok");
 
 const matchingRows = computed(() => {
-  const match = compiled.value;
-  if (match === undefined || match.kind === "error") {
+  const result = queryResult.value;
+  if (result === undefined || result.kind === "error") {
     return workspace.rows.value;
   }
-  const texts = textsById.value;
-  return workspace.rows.value.filter((row) =>
-    match.regex.test(texts?.get(row.sequence.id) ?? ""),
-  );
+  return workspace.rows.value.filter((row) => result.ids.has(row.sequence.id));
 });
 
 const visibleRows = computed(() => {
@@ -546,15 +533,6 @@ const clickSticky = (
 
 // Batch selection. Hidden rows are dropped from it, so actions only touch what is shown.
 const selected = ref<Set<string>>(new Set());
-
-// The Sequences tab lists what is highlighted here
-watch([focusId, selected], () => {
-  const ids = [...selected.value];
-  if (focusId.value !== undefined && !ids.includes(focusId.value)) {
-    ids.push(focusId.value);
-  }
-  workspace.setHighlighted(ids);
-});
 
 // The sequence and every sequence below it
 const subtreeOf = (id: string): string[] => {
@@ -974,6 +952,12 @@ const menuItems = computed(() => {
       command: makeSubtreeTarget,
     },
     {
+      label: "Copy id",
+      icon: "fas fa-copy",
+      disabled: extendTarget.value === undefined,
+      command: copyTargetId,
+    },
+    {
       label: "Delete",
       icon: "fas fa-trash",
       disabled: extendTarget.value?.parentId === undefined,
@@ -981,6 +965,19 @@ const menuItems = computed(() => {
     },
   ];
 });
+
+const copyTargetId = async () => {
+  const target = extendTarget.value;
+  if (target === undefined) return;
+  try {
+    await navigator.clipboard.writeText(target.id);
+    sdk.window.showToast(`Copied id ${target.id}`, { variant: "success" });
+  } catch {
+    sdk.window.showToast("Could not copy to the clipboard", {
+      variant: "error",
+    });
+  }
+};
 
 // A subtree shows the clicked sequence and everything under it, in its own tree
 const makeSubtreeTarget = () => {
@@ -1079,12 +1076,19 @@ const clearHighlight = () => {
       <div class="flex items-center gap-2">
         <InputText
           v-model="pattern"
-          placeholder="Regex over each sequence, e.g. (?s)^POST /api/v4/users/login"
+          placeholder="Query, e.g. `(?s)^POST /api/v4/users/login` OR children(abc123)"
           size="small"
           class="flex-1 font-mono"
           spellcheck="false"
         />
-        <span class="text-xs text-surface-500 whitespace-nowrap">
+        <span
+          v-if="queryResult?.kind === 'error'"
+          class="text-xs text-red-400 truncate max-w-80"
+          :title="queryResult.message"
+        >
+          {{ queryResult.message }}
+        </span>
+        <span v-else class="text-xs text-surface-500 whitespace-nowrap">
           {{ visibleRows.length }} / {{ workspace.rows.value.length }}
         </span>
         <div class="flex items-center">
@@ -1124,23 +1128,19 @@ const clearHighlight = () => {
           </button>
         </div>
       </div>
-      <p
-        v-if="compiled !== undefined && compiled.kind === 'error'"
-        class="text-sm text-red-400"
-      >
-        Regex error: {{ compiled.message }}
-      </p>
       <details class="text-xs text-surface-400">
-        <summary class="cursor-pointer">Regex usage</summary>
+        <summary class="cursor-pointer">Query usage</summary>
         <p class="py-1">
-          A sequence is one text: its requests in order, each followed by its
-          response head, with the requests joined by \x1e (the record
-          separator). The regex is searched in that text, and matching sequences
-          stay in the list. Start with (?s) so . matches newlines, and use
-          [^\x1e] to stay inside one request. Example:
+          Terms: <code>`regex`</code> matches each whole sequence (its requests,
+          then full responses, joined by \x1e); <code>node(id, ...)</code> is
+          those sequences; <code>children(id, ...)</code> is their immediate
+          children. Join terms with AND or OR (AND binds tighter), group with
+          parentheses. Start a regex with (?s) so . matches newlines, or (?m) so
+          ^ and $ match each line. Right-click a row and choose Copy id to get
+          an id.
         </p>
         <pre class="whitespace-pre-wrap break-all font-mono py-1">
-(?s)^\s*POST /api/v4/users/login[^\x1e]*(?:\x1ePOST /api/v4/users/login[^\x1e]*)*(?:\x1eGET /api/v4/users/(?:me|[^/\x1e?]+/status)\?[^\x1e]*)+</pre>
+children(abc123) OR `(?s)^POST /api/v4/users/login`</pre>
       </details>
     </div>
 

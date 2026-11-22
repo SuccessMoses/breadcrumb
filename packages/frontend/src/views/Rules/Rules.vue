@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { matchSequences } from "@caido-community/breadcrumb-core";
+import { runQuery, sequenceTexts } from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import { computed, ref } from "vue";
@@ -25,15 +25,17 @@ const repatternRule = (ruleId: string, pattern: string) =>
   workspace.updateSeqRule(ruleId, { pattern });
 
 // Each rule with what its pattern matches over the stringified sequences
+const texts = computed(() => sequenceTexts(workspace.state.sequences));
+
 const rows = computed(() =>
   workspace.state.seqRules.map((rule) => {
     const result =
-      rule.pattern === ""
-        ? { kind: "ok" as const, ids: [] as string[] }
-        : matchSequences(workspace.state.sequences, rule.pattern);
+      rule.pattern.trim() === ""
+        ? { kind: "ok" as const, ids: new Set<string>() }
+        : runQuery(rule.pattern, workspace.state.sequences, texts.value);
     const matches =
       result.kind === "ok"
-        ? workspace.state.sequences.filter((s) => result.ids.includes(s.id))
+        ? workspace.state.sequences.filter((s) => result.ids.has(s.id))
         : [];
     return { rule, result, matches };
   }),
@@ -44,10 +46,11 @@ const rows = computed(() =>
   <div class="h-full flex flex-col gap-3 p-3 overflow-auto">
     <div class="flex flex-col gap-2 p-3 rounded surface-800">
       <div class="text-sm text-surface-400">
-        A regex runs against each whole sequence. Requests and responses are
-        joined by the record separator (U+001E); a request and its response are
-        split by a response divider line. Start a pattern with (?s) to let dot
-        match newlines, or (?m) to let ^ and $ match each line.
+        Terms: `regex` matches each whole sequence (requests and full
+        responses); node(id, ...) is those sequences; children(id, ...) is their
+        immediate children. Combine with AND and OR, group with parentheses.
+        Start a regex with (?s) to let dot match newlines, or (?m) to let ^ and
+        $ match each line. Example: children(abc123) OR `(?s)POST /api/v4/posts`
       </div>
       <div class="flex gap-2 items-center">
         <InputText
@@ -59,7 +62,7 @@ const rows = computed(() =>
         />
         <InputText
           v-model="newPattern"
-          placeholder="Pattern, e.g. (?s)POST .*/posts"
+          placeholder="Query, e.g. node(abc123) OR `POST /api`"
           size="small"
           class="flex-1 font-mono"
           @keydown.enter="addRule"

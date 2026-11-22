@@ -80,7 +80,6 @@ export const createWorkspace = (
   const state = reactive<WorkspaceState>(emptyState());
   const focusStep = ref<string>();
   const focusTemplate = ref<string>();
-  const highlighted = ref<string[]>([]);
   const templatesById = computed(
     () => new Map(state.templates.map((t) => [t.id, t])),
   );
@@ -114,7 +113,6 @@ export const createWorkspace = (
     },
     focusStep,
     focusTemplate,
-    highlighted,
     templatesById,
     sequencesById,
   });
