@@ -15,6 +15,7 @@ import {
   stripNotes,
 } from "./notes";
 import { defaultRequest, expandTemplate } from "./renderRequest";
+import { restoreSeqRules, type SeqRule } from "./rules";
 import { expandUploads } from "./uploads";
 
 // Something read and written through .value, as a Vue ref is
@@ -61,6 +62,7 @@ export type WorkspaceState = {
   texts: Record<string, string>;
   collections: Collection[];
   templateCollection: Record<string, string>;
+  seqRules: SeqRule[];
 };
 
 // Outcome of rendering one step: its text, its response if it was sent, and
@@ -182,6 +184,12 @@ export type CoreWorkspace = {
   createCollection: (name: string) => void;
   isCollectionEmpty: (collectionId: string) => boolean;
   deleteCollection: (collectionId: string) => void;
+  createSeqRule: (name: string, pattern: string) => void;
+  updateSeqRule: (
+    ruleId: string,
+    change: { name?: string; pattern?: string },
+  ) => void;
+  deleteSeqRule: (ruleId: string) => void;
   moveTemplate: (templateId: string, collectionId: string) => void;
   templateText: (templateId: string) => string | undefined;
   setTemplateText: (templateId: string, text: string) => void;
@@ -201,6 +209,7 @@ export const emptyState = (): WorkspaceState => ({
   texts: {},
   collections: [],
   templateCollection: {},
+  seqRules: [],
 });
 
 const restoreFolds = (value: unknown): Folds => {
@@ -467,6 +476,9 @@ export const createCore = ({
       state.texts = restoreStrings(
         hasKey(saved, "texts") ? saved.texts : undefined,
       );
+      state.seqRules = restoreSeqRules(
+        hasKey(saved, "seqRules") ? saved.seqRules : undefined,
+      );
       // Captures still kept per template move into the template text, once.
       // Remove this when no project file has a rules entry left.
       const legacy = restoreLegacyRules(
@@ -510,6 +522,7 @@ export const createCore = ({
     texts: state.texts,
     collections: state.collections,
     templateCollection: state.templateCollection,
+    seqRules: state.seqRules,
   });
   const save = () => adapter.save(snapshot());
 
@@ -1152,6 +1165,28 @@ export const createCore = ({
     state.collections = state.collections.filter((c) => c.id !== collectionId);
   };
 
+  const createSeqRule = (name: string, pattern: string) => {
+    const trimmed = name.trim();
+    if (trimmed === "") return;
+    state.seqRules.push({ id: newId(), name: trimmed, pattern });
+  };
+
+  const updateSeqRule = (
+    ruleId: string,
+    change: { name?: string; pattern?: string },
+  ) => {
+    const rule = state.seqRules.find((r) => r.id === ruleId);
+    if (rule === undefined) return;
+    if (change.name !== undefined && change.name.trim() !== "") {
+      rule.name = change.name.trim();
+    }
+    if (change.pattern !== undefined) rule.pattern = change.pattern;
+  };
+
+  const deleteSeqRule = (ruleId: string) => {
+    state.seqRules = state.seqRules.filter((r) => r.id !== ruleId);
+  };
+
   const moveTemplate = (templateId: string, collectionId: string) => {
     state.templateCollection[templateId] = collectionId;
   };
@@ -1243,6 +1278,9 @@ export const createCore = ({
     createCollection,
     isCollectionEmpty,
     deleteCollection,
+    createSeqRule,
+    updateSeqRule,
+    deleteSeqRule,
     moveTemplate,
     templateText,
     setTemplateText,

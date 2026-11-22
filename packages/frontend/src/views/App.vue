@@ -8,6 +8,7 @@ import { onMounted, onUnmounted, ref, shallowRef } from "vue";
 
 import { Backup } from "./Backup";
 import { Requests } from "./Requests";
+import { Rules } from "./Rules";
 import { Sequences } from "./Sequences";
 import { Tree } from "./Tree";
 
@@ -37,7 +38,7 @@ onMounted(async () => {
 // Tab moves to the next view on the right, Shift+Tab to the one on the left,
 // wrapping at the ends, unless focus is in a field or the editor, where Tab keeps
 // its usual job
-const TAB_ORDER = ["requests", "sequences", "tree", "backup"];
+const TAB_ORDER = ["requests", "sequences", "tree", "rules", "backup"];
 
 const isTypingTarget = (target: unknown) =>
   target instanceof HTMLElement &&
@@ -89,6 +90,7 @@ const showTemplate = () => {
       <Tab value="requests">Requests</Tab>
       <Tab value="sequences">Sequences</Tab>
       <Tab value="tree">Tree</Tab>
+      <Tab value="rules">Rules</Tab>
       <Tab value="backup">Backup</Tab>
     </TabList>
     <TabPanels class="flex-1 min-h-0 p-0">
@@ -106,6 +108,9 @@ const showTemplate = () => {
           :workspace="workspace"
           :visible="activeTab === 'tree'"
           @open-sequence="showSequence"
+      /></TabPanel>
+      <TabPanel value="rules" class="h-full"
+        ><Rules :workspace="workspace"
       /></TabPanel>
       <TabPanel value="backup" class="h-full"
         ><Backup :workspace="workspace"

@@ -5,6 +5,7 @@ export * from "./checkHttp";
 export * from "./display";
 export * from "./notes";
 export * from "./renderRequest";
+export * from "./rules";
 export * from "./sequenceText";
 export * from "./uploads";
 export * from "./workspace";

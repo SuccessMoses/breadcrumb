@@ -19,15 +19,16 @@ export const sequenceText = (sequence: Sequence) =>
     )
     .join(REQUEST_SEPARATOR);
 
-// Accepts a Python-style pattern. A leading (?s) means "dot matches newlines",
-// which JavaScript spells with the s flag.
+// Accepts a Python-style pattern. Leading (?s) and (?m) mean "dot matches
+// newlines" and "^ and $ match at each line", which JavaScript spells with flags.
 export const compilePattern = (pattern: string) => {
-  const dotAll = pattern.startsWith("(?s)");
-  const source = dotAll ? pattern.slice(4) : pattern;
+  const leading = /^\(\?([sm]+)\)/.exec(pattern);
+  const flags = leading?.[1] ?? "";
+  const source = leading ? pattern.slice(leading[0].length) : pattern;
   try {
     return {
       kind: "ok" as const,
-      regex: new RegExp(source, dotAll ? "s" : ""),
+      regex: new RegExp(source, flags),
     };
   } catch (error) {
     return {
