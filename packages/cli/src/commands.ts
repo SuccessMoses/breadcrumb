@@ -1,11 +1,19 @@
 import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 
-import { checkHttp, displayPath } from "@caido-community/breadcrumb-core";
+import {
+  checkHttp,
+  displayPath,
+  uploadsOf,
+} from "@caido-community/breadcrumb-core";
 
 import type { Store } from "./store";
 import { find, nodeOf, page, pathOf, summary } from "./tree";
 
 export type Flags = Record<string, string | true>;
+
+// Larger files would make every save of the project slow
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 // Prints the value as JSON when asked for it, otherwise the text it makes
 const print = (json: boolean, value: unknown, text: () => string) => {
@@ -58,6 +66,59 @@ export const run = async (
       core.setTemplateText(id, readFileSync(file, "utf8"));
       store.save();
       print(json, { id }, () => `added ${id}`);
+      return 0;
+    }
+
+    case "attach": {
+      const [templateId, name, path] = args;
+      if (
+        templateId === undefined ||
+        name === undefined ||
+        path === undefined
+      ) {
+        throw new Error("attach needs a template id, a name and a file");
+      }
+      if (!/^[A-Za-z_]\w*$/.test(name))
+        throw new Error(`${name} is not a name`);
+      const text = core.templateText(templateId);
+      if (text === undefined) throw new Error(`No template ${templateId}`);
+      const bytes = readFileSync(path);
+      if (bytes.length > MAX_UPLOAD_BYTES) {
+        throw new Error(`${path} is larger than ${MAX_UPLOAD_BYTES} bytes`);
+      }
+      const filename = basename(path);
+      if (filename.includes("|"))
+        throw new Error("the file name cannot contain |");
+      const line = `# \`\`file ${name} = ${filename}|${bytes.toString("base64")}`;
+      // Attaching again under the same name replaces the earlier file
+      const others = text
+        .split("\n")
+        .filter(
+          (existing) =>
+            !uploadsOf(existing).some((upload) => upload.name === name),
+        );
+      const replaced = text
+        .split("\n")
+        .some((existing) =>
+          uploadsOf(existing).some((upload) => upload.name === name),
+        );
+      const next = replaced
+        ? text
+            .split("\n")
+            .map((existing) =>
+              uploadsOf(existing).some((upload) => upload.name === name)
+                ? line
+                : existing,
+            )
+            .join("\n")
+        : `${others.join("\n").replace(/\n*$/, "\n")}${line}\n`;
+      core.setTemplateText(templateId, next);
+      store.save();
+      print(
+        json,
+        { name, bytes: bytes.length },
+        () => `attached ${name} (${bytes.length} bytes)`,
+      );
       return 0;
     }
 

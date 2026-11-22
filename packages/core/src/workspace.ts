@@ -15,6 +15,7 @@ import {
   stripNotes,
 } from "./notes";
 import { defaultRequest, expandTemplate } from "./renderRequest";
+import { expandUploads } from "./uploads";
 
 // Something read and written through .value, as a Vue ref is
 export type Ref<T> = { value: T };
@@ -631,9 +632,14 @@ export const createCore = ({
     before: SequenceStep[],
     fixed: Record<string, string> = {},
   ) =>
-    fillCaptures(stripNotes(text), valuesBefore(before, text), fixed).map(
-      (filling) => ({ ...filling, request: expandTemplate(filling.request) }),
-    );
+    fillCaptures(
+      stripNotes(expandUploads(text)),
+      valuesBefore(before, text),
+      fixed,
+    ).map((filling) => ({
+      ...filling,
+      request: expandTemplate(filling.request),
+    }));
 
   const previewTemplate = (templateId: string, sequenceId?: string) => {
     const text = templateText(templateId);
@@ -799,7 +805,10 @@ export const createCore = ({
     const text = templateText(templateId);
     const sequence = state.sequences.find((s) => s.id === sequenceId);
     if (text === undefined || sequence === undefined) return [];
-    return unmetNames(stripNotes(text), valuesBefore(sequence.steps, text));
+    return unmetNames(
+      stripNotes(expandUploads(text)),
+      valuesBefore(sequence.steps, text),
+    );
   };
 
   // Creates one child of a sequence for each rendering of the template, without

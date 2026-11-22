@@ -7,6 +7,7 @@ export const USAGE = `Usage: breadcrumb <project.json> <command> [options]
 
 Reading
   add <file.http>                    add a request template from a file
+  attach <template-id> <name> <file> attach a file for {{upload:name}}
   templates                          list request templates
   sequences                          list every sequence
   tree-summary                       size and shape of the trees
@@ -40,6 +41,8 @@ Options
 
 export const COMMAND_HELP: Record<string, string> = {
   init: "breadcrumb <project.json> init\n  Creates an empty project file. Refuses if the file exists.",
+  attach:
+    "breadcrumb <project.json> attach <template-id> <name> <file>\n  Stores the file in the template as base64 (up to 5 MB). {{upload:name}} puts\n  it in a multipart body and {{file:name}} puts the raw bytes in the request.\n  The template's headers need: Content-Type: multipart/form-data; boundary=breadcrumb\n  Attaching under an existing name replaces that file. Only the CLI sends files.",
   add: 'breadcrumb <project.json> add <file.http>\n  Adds a request template from a raw HTTP file. Lines starting with "# ``" are\n  template commands (see guide). Prints the new template id.',
   templates:
     "breadcrumb <project.json> templates [--json]\n  Lists templates with id, method, path, collection and how many sequences\n  they have been rendered into.",
@@ -81,6 +84,11 @@ Templates
 Finding sequences
   tree-summary sizes the trees. tree --json pages through them and gives leaves
   (children 0). find and show look inside sequences. path shows where one sits.
+
+Files
+  attach stores a file in a template. {{upload:name}} is a multipart part (the
+  template's Content-Type must say boundary=breadcrumb); {{file:name}} is the raw
+  bytes. Only the CLI sends files.
 
 Sending
   extend sends one template after one sequence. Refuses when inputs are missing.
