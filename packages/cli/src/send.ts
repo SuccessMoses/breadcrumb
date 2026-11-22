@@ -3,12 +3,8 @@ import { connect as connectPlain, type Socket } from "node:net";
 import { clearTimeout, setTimeout } from "node:timers";
 import { connect as connectTls } from "node:tls";
 
-import {
-  type SendResult,
-  UPLOAD_END,
-  UPLOAD_START,
-} from "@caido-community/breadcrumb-core";
-import { normalizeRaw } from "shared";
+import type { SendResult } from "@caido-community/breadcrumb-core";
+import { normalizeRaw, requestBytes, UPLOAD_START } from "shared";
 
 export type SendOptions = {
   // Accept certificates that do not verify, such as a local self-signed one
@@ -47,33 +43,6 @@ const isComplete = (text: string): boolean => {
   return false;
 };
 
-// Turns a request that holds uploaded files into the bytes to send. The text is
-// sent as UTF-8; each base64 segment between the upload markers becomes the file's
-// bytes, and Content-Length counts the bytes.
-const wireBytes = (raw: string): Buffer => {
-  const end = raw.indexOf("\r\n\r\n");
-  const head = end === -1 ? raw : raw.slice(0, end);
-  const body = end === -1 ? "" : raw.slice(end + 4);
-  const segments = new RegExp(
-    `${UPLOAD_START}([A-Za-z0-9+/=]*)${UPLOAD_END}`,
-    "g",
-  );
-  const parts: Buffer[] = [];
-  let last = 0;
-  for (const match of body.matchAll(segments)) {
-    parts.push(Buffer.from(body.slice(last, match.index), "utf8"));
-    parts.push(Buffer.from(match[1] ?? "", "base64"));
-    last = (match.index ?? 0) + match[0].length;
-  }
-  parts.push(Buffer.from(body.slice(last), "utf8"));
-  const bytes = Buffer.concat(parts);
-  const line = `Content-Length: ${bytes.length}`;
-  const withLength = /^content-length:/im.test(head)
-    ? head.replace(/^content-length:.*$/im, line)
-    : `${head}\r\n${line}`;
-  return Buffer.concat([Buffer.from(`${withLength}\r\n\r\n`, "utf8"), bytes]);
-};
-
 // Sends a raw request over its own connection and returns the raw response. The
 // request is sent as written, with the same repairs the plugin makes.
 export const sendRaw = (
@@ -89,7 +58,7 @@ export const sendRaw = (
   }
   const lined = raw.replace(/\r?\n/g, "\r\n");
   const wire = lined.includes(UPLOAD_START)
-    ? wireBytes(lined)
+    ? Buffer.from(requestBytes(lined))
     : Buffer.from(normalizeRaw(lined), "utf8");
 
   return new Promise((resolve) => {

@@ -3,11 +3,10 @@
 //   {{upload:name}}  a multipart/form-data part for the file (the template's
 //                    headers must say: Content-Type: multipart/form-data; boundary=breadcrumb)
 //   {{file:name}}    the file's bytes as they are, for a raw body
-// The bytes are written between UPLOAD_START and UPLOAD_END as base64. Only the
-// CLI can send them; the plugin refuses requests that contain them.
+// The bytes are written as base64 between UPLOAD_START and UPLOAD_END (see shared).
 
-export const UPLOAD_START = "\u0001";
-export const UPLOAD_END = "\u0002";
+import { UPLOAD_END, UPLOAD_START } from "shared";
+
 export const UPLOAD_BOUNDARY = "breadcrumb";
 
 const FILE =
@@ -69,4 +68,20 @@ export const expandUploads = (text: string): string => {
       if (upload === undefined) return match;
       return `${UPLOAD_START}${upload.data}${UPLOAD_END}`;
     });
+};
+
+// The template text with this file's line set: replaces an earlier file of the
+// same name, or adds the line at the end
+export const withUpload = (text: string, upload: Upload): string => {
+  const line = `# \`\`file ${upload.name} = ${upload.filename}|${upload.data}`;
+  const named = (existing: string) =>
+    uploadsOf(existing).some((found) => found.name === upload.name);
+  if (text.split("\n").some(named)) {
+    return text
+      .split("\n")
+      .map((existing) => (named(existing) ? line : existing))
+      .join("\n");
+  }
+  const base = text === "" || text.endsWith("\n") ? text : `${text}\n`;
+  return `${base}${line}\n`;
 };

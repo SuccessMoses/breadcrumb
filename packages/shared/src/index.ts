@@ -5,6 +5,13 @@ import type { Events } from "./events";
 
 export { type Result, ok, err } from "./result";
 export { normalizeRaw } from "./raw";
+export {
+  encodeBase64,
+  requestBytes,
+  UPLOAD_END,
+  UPLOAD_LIMIT_BYTES,
+  UPLOAD_START,
+} from "./upload";
 export type { API } from "./api";
 export type { Events } from "./events";
 export type {

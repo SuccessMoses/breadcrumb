@@ -1,7 +1,7 @@
 import type { SDK } from "caido:plugin";
 import { RequestSpecRaw } from "caido:utils";
 import type { Result } from "shared";
-import { err, normalizeRaw, ok } from "shared";
+import { err, normalizeRaw, ok, requestBytes, UPLOAD_START } from "shared";
 
 const HOST_HEADER = /^host:\s*(.+)$/im;
 
@@ -18,7 +18,10 @@ export async function sendRaw(sdk: SDK, raw: string): Promise<Result<string>> {
     return err("Request has no Host header");
 
   const spec = new RequestSpecRaw(`http://${host}`);
-  spec.setRaw(normalizeRaw(raw));
+  // A request with uploaded files is sent as its exact bytes; any other as text
+  spec.setRaw(
+    raw.includes(UPLOAD_START) ? requestBytes(raw) : normalizeRaw(raw),
+  );
   try {
     const { response } = await sdk.requests.send(spec);
     return ok(response.getRaw().toText());

@@ -4,8 +4,9 @@ import { basename } from "node:path";
 import {
   checkHttp,
   displayPath,
-  uploadsOf,
+  withUpload,
 } from "@caido-community/breadcrumb-core";
+import { UPLOAD_LIMIT_BYTES } from "shared";
 
 import type { Store } from "./store";
 import { find, nodeOf, page, pathOf, summary } from "./tree";
@@ -13,7 +14,7 @@ import { find, nodeOf, page, pathOf, summary } from "./tree";
 export type Flags = Record<string, string | true>;
 
 // Larger files would make every save of the project slow
-const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = UPLOAD_LIMIT_BYTES;
 
 // Prints the value as JSON when asked for it, otherwise the text it makes
 const print = (json: boolean, value: unknown, text: () => string) => {
@@ -89,29 +90,8 @@ export const run = async (
       const filename = basename(path);
       if (filename.includes("|"))
         throw new Error("the file name cannot contain |");
-      const line = `# \`\`file ${name} = ${filename}|${bytes.toString("base64")}`;
-      // Attaching again under the same name replaces the earlier file
-      const others = text
-        .split("\n")
-        .filter(
-          (existing) =>
-            !uploadsOf(existing).some((upload) => upload.name === name),
-        );
-      const replaced = text
-        .split("\n")
-        .some((existing) =>
-          uploadsOf(existing).some((upload) => upload.name === name),
-        );
-      const next = replaced
-        ? text
-            .split("\n")
-            .map((existing) =>
-              uploadsOf(existing).some((upload) => upload.name === name)
-                ? line
-                : existing,
-            )
-            .join("\n")
-        : `${others.join("\n").replace(/\n*$/, "\n")}${line}\n`;
+      const upload = { name, filename, data: bytes.toString("base64") };
+      const next = withUpload(text, upload);
       core.setTemplateText(templateId, next);
       store.save();
       print(

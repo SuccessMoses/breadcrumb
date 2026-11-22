@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import { withUpload } from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import ContextMenu from "primevue/contextmenu";
 import InputText from "primevue/inputtext";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
-import type { RequestTemplate } from "shared";
+import { encodeBase64, type RequestTemplate, UPLOAD_LIMIT_BYTES } from "shared";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 
 import { createHttpEditor, type HttpEditor } from "@/editor/httpEditor";
@@ -166,6 +167,49 @@ watch(collapsed, (value) =>
 );
 const editorHost = ref<HTMLElement>();
 let editor: HttpEditor | undefined;
+
+// Attaches a file to the template as {{upload:name}}, the same as the CLI's attach
+const attachName = ref("image");
+const attachError = ref("");
+const attachInput = ref<HTMLInputElement>();
+
+const attachFile = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  const name = attachName.value.trim();
+  attachError.value = "";
+  if (file === undefined || selectedTemplateId.value === undefined) return;
+  if (!/^[A-Za-z_]\w*$/.test(name)) {
+    attachError.value = "Use letters, digits and _, not starting with a digit";
+    return;
+  }
+  if (file.name.includes("|")) {
+    attachError.value = "The file name cannot contain |";
+    return;
+  }
+  if (file.size > UPLOAD_LIMIT_BYTES) {
+    attachError.value = "Files are limited to 5 MB";
+    return;
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // Edits still waiting to be saved go into the template first
+  flushTemplate();
+  const id = selectedTemplateId.value;
+  if (id === undefined) return;
+  const text = toLf(workspace.templateText(id) ?? "");
+  workspace.setTemplateText(
+    id,
+    toCrlf(
+      withUpload(text, {
+        name,
+        filename: file.name,
+        data: encodeBase64(bytes),
+      }),
+    ),
+  );
+  showTemplateText();
+};
 
 const selectedTemplate = computed(() => {
   const id = selectedTemplateId.value;
@@ -496,6 +540,31 @@ onMounted(() => {
             "# ``dict name from regex" takes the last group of each match in the
             response as a value.
           </span>
+        </div>
+        <div
+          v-if="selectedTemplate !== undefined"
+          class="flex flex-wrap items-center gap-2 px-3 pb-2 text-xs text-surface-500"
+        >
+          <span>
+            Attach a file, used as &#123;&#123;upload:name&#125;&#125; (a
+            multipart part) or &#123;&#123;file:name&#125;&#125; (raw bytes). Up
+            to 5 MB.
+          </span>
+          <InputText v-model="attachName" size="small" class="w-28" />
+          <Button
+            label="Attach file"
+            size="small"
+            severity="secondary"
+            icon="fas fa-paperclip"
+            @click="attachInput?.click()"
+          />
+          <input
+            ref="attachInput"
+            type="file"
+            class="hidden"
+            @change="attachFile"
+          />
+          <span v-if="attachError" class="text-red-400">{{ attachError }}</span>
         </div>
         <div
           ref="editorHost"

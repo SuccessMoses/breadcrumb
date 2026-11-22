@@ -6,7 +6,6 @@ import {
   type Rendering,
   type SendResult,
   type SequenceRow,
-  UPLOAD_START,
   type WorkspaceState,
 } from "@caido-community/breadcrumb-core";
 import type { RequestTemplate, Sequence } from "shared";
@@ -106,15 +105,7 @@ export const createWorkspace = (
         };
         sdk.storage.set({ ...current, projects });
       },
-      sendRaw: (raw) =>
-        // Uploaded bytes are only sent by the CLI
-        raw.includes(UPLOAD_START)
-          ? // eslint-disable-next-line compat/compat -- the plugin's browser has Promise.resolve
-            Promise.resolve({
-              kind: "Error" as const,
-              error: "Files can only be sent from the CLI",
-            })
-          : sendWithTimeout(sdk.backend.sendRaw(raw)),
+      sendRaw: (raw) => sendWithTimeout(sdk.backend.sendRaw(raw)),
       notify: (message, options) => sdk.window.showToast(message, options),
       schedule: (run, delayMs) => {
         const id = window.setTimeout(run, delayMs);
