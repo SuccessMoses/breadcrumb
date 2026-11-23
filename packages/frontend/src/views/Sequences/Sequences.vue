@@ -250,6 +250,22 @@ const copyShownAsJson = async () => {
   }
 };
 
+// Copies every sequence the query lists, as a JSON array, for pasting elsewhere
+const copyListedAsJson = async () => {
+  const sequences = listed.value;
+  if (sequences.length === 0) return;
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(sequences, null, 2));
+    sdk.window.showToast(`Copied ${sequences.length} sequence(s) as JSON`, {
+      variant: "success",
+    });
+  } catch {
+    sdk.window.showToast("Could not copy to the clipboard", {
+      variant: "error",
+    });
+  }
+};
+
 const deleteShown = () => {
   const sequence = shown.value;
   if (sequence === undefined || sequence.parentId === undefined) return;
@@ -312,6 +328,14 @@ watch(
         icon="fas fa-copy"
         :disabled="shown === undefined"
         @click="copyShownAsJson"
+      />
+      <Button
+        label="Copy all as JSON"
+        size="small"
+        severity="secondary"
+        icon="fas fa-copy"
+        :disabled="listed.length === 0"
+        @click="copyListedAsJson"
       />
       <Button
         label="Delete"
