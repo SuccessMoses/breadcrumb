@@ -3,11 +3,18 @@ import { runQuery, sequenceTexts } from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
-import { computed, ref } from "vue";
+import { computed, type Directive, ref } from "vue";
 
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
+
+// Sizes a textarea to its content, when it mounts and whenever its value changes
+const fit = (el: HTMLElement) => {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+};
+const vFit: Directive<HTMLElement> = { mounted: fit, updated: fit };
 
 // A new rule, held in the form until it is added
 const newName = ref("");
@@ -63,10 +70,10 @@ const rows = computed(() =>
         />
         <Textarea
           v-model="newPattern"
+          v-fit
           placeholder="Query, e.g. node(abc123) OR `POST /api`"
           rows="1"
-          auto-resize
-          class="flex-1 min-w-0 font-mono break-all"
+          class="flex-1 min-w-0 font-mono break-all overflow-hidden"
           @keydown.enter.prevent="addRule"
         />
         <Button
@@ -96,10 +103,10 @@ const rows = computed(() =>
           @update:model-value="renameRule(row.rule.id, $event)"
         />
         <Textarea
+          v-fit
           :model-value="row.rule.pattern"
           rows="1"
-          auto-resize
-          class="flex-1 min-w-0 font-mono break-all"
+          class="flex-1 min-w-0 font-mono break-all overflow-hidden"
           @update:model-value="repatternRule(row.rule.id, $event)"
         />
         <Button
