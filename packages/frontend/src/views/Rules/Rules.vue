@@ -2,6 +2,7 @@
 import { runQuery, sequenceTexts } from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
+import Textarea from "primevue/textarea";
 import { computed, ref } from "vue";
 
 import type { Workspace } from "@/workspace/workspace";
@@ -52,7 +53,7 @@ const rows = computed(() =>
         Start a regex with (?s) to let dot match newlines, or (?m) to let ^ and
         $ match each line. Example: children(abc123) OR `(?s)POST /api/v4/posts`
       </div>
-      <div class="flex gap-2 items-center">
+      <div class="flex gap-2 items-start">
         <InputText
           v-model="newName"
           placeholder="Rule name"
@@ -60,12 +61,13 @@ const rows = computed(() =>
           class="w-40"
           @keydown.enter="addRule"
         />
-        <InputText
+        <Textarea
           v-model="newPattern"
           placeholder="Query, e.g. node(abc123) OR `POST /api`"
-          size="small"
-          class="flex-1 font-mono"
-          @keydown.enter="addRule"
+          rows="1"
+          auto-resize
+          class="flex-1 min-w-0 font-mono break-all"
+          @keydown.enter.prevent="addRule"
         />
         <Button
           label="Add rule"
@@ -86,17 +88,18 @@ const rows = computed(() =>
       :key="row.rule.id"
       class="flex flex-col gap-2 p-3 rounded surface-800"
     >
-      <div class="flex gap-2 items-center">
+      <div class="flex gap-2 items-start">
         <InputText
           :model-value="row.rule.name"
           size="small"
           class="w-40"
           @update:model-value="renameRule(row.rule.id, $event)"
         />
-        <InputText
+        <Textarea
           :model-value="row.rule.pattern"
-          size="small"
-          class="flex-1 font-mono"
+          rows="1"
+          auto-resize
+          class="flex-1 min-w-0 font-mono break-all"
           @update:model-value="repatternRule(row.rule.id, $event)"
         />
         <Button
