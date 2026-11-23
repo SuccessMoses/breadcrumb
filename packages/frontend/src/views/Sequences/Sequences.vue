@@ -36,6 +36,27 @@ const queryResult = computed(() =>
     : runQuery(query.value, workspace.state.sequences, texts.value),
 );
 
+// Enter in the query runs its delete(...) terms, if it has any: after a
+// confirmation, the named sequences and everything under them are deleted, and
+// the query is cleared so the list shows what is left. A query without delete
+// only filters the list, as it does while typing.
+const applyQuery = () => {
+  const result = queryResult.value;
+  if (result?.kind !== "ok" || result.deletes.size === 0) return;
+  const ids = [...result.deletes];
+  const confirmed = window.confirm(
+    `Delete ${ids.length} sequence(s) named in the query and everything under them?`,
+  );
+  if (!confirmed) return;
+  workspace.checkpoint();
+  let removed = 0;
+  for (const id of ids) removed += workspace.deleteSequence(id);
+  query.value = "";
+  sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
+    variant: "success",
+  });
+};
+
 // The sequences the query matches, in the order they were made. An empty query
 // lists all of them, and a query that does not parse lists none.
 const listed = computed<Sequence[]>(() => {
@@ -333,6 +354,7 @@ watch(
           size="small"
           class="w-full font-mono"
           spellcheck="false"
+          @keydown.enter="applyQuery"
         />
         <p
           v-if="queryResult?.kind === 'error'"
