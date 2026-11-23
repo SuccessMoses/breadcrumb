@@ -1,62 +1,20 @@
 import { history, historyKeymap } from "@codemirror/commands";
+import { javascript } from "@codemirror/lang-javascript";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { Annotation, EditorState } from "@codemirror/state";
-import {
-  Decoration,
-  type DecorationSet,
-  EditorView,
-  keymap,
-  ViewPlugin,
-  type ViewUpdate,
-} from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
 
-// One pass over the text: each alternative is one kind of token, and the first
-// alternative that matches at a position wins, so a regex or a string is never
-// read as code inside it
-const TOKEN =
-  /`[^`]*`|"(?:[^"\\]|\\.)*"|\b(?:var|rule)\b|\b(?:AND|OR)\b|\b(?:node|children|delete)(?=\s*\()|\b(?:name|message)(?=\s*=)|\b[A-Za-z_][A-Za-z0-9_]*(?=\s*=)|;/g;
-
-const classFor = (token: string): string => {
-  if (token.startsWith("`")) return "cm-script-regex";
-  if (token.startsWith('"')) return "cm-script-string";
-  if (token === "var" || token === "rule") return "cm-script-keyword";
-  if (token === "AND" || token === "OR") return "cm-script-operator";
-  if (token === "node" || token === "children" || token === "delete") {
-    return "cm-script-function";
-  }
-  if (token === "name" || token === "message") return "cm-script-attribute";
-  if (token === ";") return "cm-script-punct";
-  return "cm-script-name";
-};
-
-const highlightPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-
-    constructor(view: EditorView) {
-      this.decorations = this.build(view);
-    }
-
-    update(update: ViewUpdate) {
-      if (update.docChanged) this.decorations = this.build(update.view);
-    }
-
-    build(view: EditorView): DecorationSet {
-      const ranges = [];
-      const text = view.state.doc.toString();
-      for (const match of text.matchAll(TOKEN)) {
-        const from = match.index ?? 0;
-        ranges.push(
-          Decoration.mark({ class: classFor(match[0]) }).range(
-            from,
-            from + match[0].length,
-          ),
-        );
-      }
-      return Decoration.set(ranges, true);
-    }
-  },
-  { decorations: (plugin) => plugin.decorations },
-);
+const highlight = HighlightStyle.define([
+  { tag: tags.keyword, color: "#c678dd", fontWeight: "600" },
+  { tag: [tags.string, tags.special(tags.string)], color: "#98c379" },
+  { tag: [tags.number, tags.bool, tags.null], color: "#d19a66" },
+  { tag: tags.regexp, color: "#f0a048" },
+  { tag: tags.comment, color: "#5c616b", fontStyle: "italic" },
+  { tag: tags.function(tags.variableName), color: "#7aa2f7" },
+  { tag: tags.propertyName, color: "#e5c07b" },
+  { tag: [tags.operator, tags.punctuation], color: "#6b7079" },
+]);
 
 const theme = EditorView.theme(
   {
@@ -82,18 +40,6 @@ const theme = EditorView.theme(
     ".cm-activeLineGutter": { backgroundColor: "#262930" },
     "&.cm-focused": { outline: "none" },
     ".cm-cursor": { borderLeftColor: "#f0a048" },
-    ".cm-script-keyword": { color: "#c678dd", fontWeight: "600" },
-    ".cm-script-operator": { color: "#c678dd" },
-    ".cm-script-function": { color: "#7aa2f7" },
-    ".cm-script-attribute": { color: "#e5c07b" },
-    ".cm-script-name": { color: "#e6e8ec" },
-    ".cm-script-string": { color: "#98c379" },
-    ".cm-script-regex": {
-      color: "#f0a048",
-      backgroundColor: "rgba(240, 160, 72, 0.12)",
-      borderRadius: "2px",
-    },
-    ".cm-script-punct": { color: "#6b7079" },
   },
   { dark: true },
 );
@@ -120,7 +66,8 @@ export const createScriptEditor = (
         history(),
         keymap.of(historyKeymap),
         EditorView.lineWrapping,
-        highlightPlugin,
+        javascript(),
+        syntaxHighlighting(highlight),
         theme,
         EditorView.updateListener.of((update) => {
           if (!update.docChanged) return;

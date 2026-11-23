@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createContext, runInContext } from "node:vm";
 
 import {
   type CoreWorkspace,
@@ -81,11 +82,38 @@ export const openStore = (file: string, options: SendOptions): Store => {
     renameSync(`${file}.tmp`, file);
   };
 
+  // Runs the code over the input with the same 2 second limit as the frontend
+  const runScript = (code: string, input: string) => {
+    const lines: string[] = [];
+    const print = (...values: unknown[]) => {
+      lines.push(values.map((value) => String(value)).join(" "));
+    };
+    const context = createContext({ input, print });
+    try {
+      runInContext(
+        `(function (input, console) {\n${code}\n})(input, { log: print, info: print, warn: print, error: print })`,
+        context,
+        { timeout: 2000 },
+      );
+      // eslint-disable-next-line compat/compat -- the adapter returns a Promise
+      return Promise.resolve({ lines, error: undefined });
+    } catch (error) {
+      const timedOut =
+        (error as { code?: string }).code === "ERR_SCRIPT_EXECUTION_TIMEOUT";
+      // eslint-disable-next-line compat/compat -- the adapter returns a Promise
+      return Promise.resolve({
+        lines,
+        error: timedOut ? "Timed out after 2 seconds" : String(error),
+      });
+    }
+  };
+
   const core = createCore({
     state,
     adapter: {
       load: () => stored,
       save: () => save(),
+      runScript,
       sendRaw: (raw) => sendRaw(raw, options),
       notify: (message) => {
         process.stderr.write(`${message}\n`);

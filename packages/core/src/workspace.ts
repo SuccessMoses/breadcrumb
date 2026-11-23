@@ -15,14 +15,16 @@ import {
   stripNotes,
 } from "./notes";
 import { defaultRequest, expandTemplate } from "./renderRequest";
+import { stringifySequence } from "./rules";
 import {
+  entriesFor,
+  isMatch,
   LOG_LIMIT,
   type LogEntry,
-  logMatches,
   restoreLogs,
   restoreScripts,
   type Script,
-  scriptsFromRules,
+  type ScriptRun,
 } from "./scripts";
 import {
   parseTemplatesJson,
@@ -47,6 +49,9 @@ export type Adapter = {
   notify: (message: string, options?: { variant: "error" }) => void;
   // Runs a function after a delay and returns a way to cancel it
   schedule: (run: () => void, delayMs: number) => () => void;
+  // Runs a script's code with the input as its input, and returns what it
+  // wrote to stdout. The adapter stops the script after 2 seconds.
+  runScript: (code: string, input: string) => Promise<ScriptRun>;
 };
 
 type Collection = { id: string; name: string };
@@ -494,13 +499,12 @@ export const createCore = ({
       state.texts = restoreStrings(
         hasKey(saved, "texts") ? saved.texts : undefined,
       );
-      // Saves from before scripts kept rules, which become one script each
-      const legacyRules = hasKey(saved, "seqRules")
-        ? saved.seqRules
-        : undefined;
-      state.scripts = hasKey(saved, "scripts")
-        ? restoreScripts(saved.scripts)
-        : scriptsFromRules(legacyRules);
+      // Scripts saved in the rules language are not JavaScript, so they are dropped
+      state.scripts =
+        hasKey(saved, "scriptsLanguage") &&
+        saved.scriptsLanguage === "javascript"
+          ? restoreScripts(hasKey(saved, "scripts") ? saved.scripts : undefined)
+          : [];
       state.logs = restoreLogs(hasKey(saved, "logs") ? saved.logs : undefined);
       // Captures still kept per template move into the template text, once.
       // Remove this when no project file has a rules entry left.
@@ -546,6 +550,7 @@ export const createCore = ({
     collections: state.collections,
     templateCollection: state.templateCollection,
     scripts: state.scripts,
+    scriptsLanguage: "javascript",
     logs: state.logs,
   });
   const save = () => adapter.save(snapshot());
@@ -962,7 +967,7 @@ export const createCore = ({
       state.sequences.push(child);
       children.push({ id: child.id, failure: result.failure });
     }
-    logNewSequences(children.map((child) => child.id));
+    await logNewSequences(children.map((child) => child.id));
     return { kind: "ok", children };
   };
 
@@ -1268,12 +1273,25 @@ export const createCore = ({
     state.logs = [];
   };
 
-  // Runs the scripts over sequences just created, and logs what they match
-  const logNewSequences = (sequenceIds: string[]) => {
-    const logs = logMatches(state.scripts, state.sequences, sequenceIds);
-    const time = Date.now();
-    for (const entry of logs) {
-      state.logs.push({ id: newId(), time, ...entry });
+  // Runs the scripts over each sequence just created, in order. Each script's
+  // stdout becomes log entries. The first script that logs a match for a
+  // sequence stops the scripts for it.
+  const logNewSequences = async (sequenceIds: string[]) => {
+    const scripts = [...state.scripts];
+    for (const sequenceId of sequenceIds) {
+      const sequence = state.sequences.find((s) => s.id === sequenceId);
+      if (sequence === undefined) continue;
+      const input = stringifySequence(sequence);
+      for (const script of scripts) {
+        if (script.code.trim() === "") continue;
+        const run = await adapter.runScript(script.code, input);
+        const entries = entriesFor(script.name, sequenceId, run);
+        const time = Date.now();
+        for (const entry of entries) {
+          state.logs.push({ id: newId(), time, ...entry });
+        }
+        if (isMatch(entries)) break;
+      }
     }
     if (state.logs.length > LOG_LIMIT) {
       state.logs.splice(0, state.logs.length - LOG_LIMIT);

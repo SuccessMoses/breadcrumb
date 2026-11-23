@@ -65,7 +65,6 @@ const parse = (
   tokens: Token[],
   sequences: Sequence[],
   texts: Map<string, string>,
-  vars: ReadonlyMap<string, ReadonlySet<string>>,
   deletes: Set<string>,
 ): Set<string> => {
   let position = 0;
@@ -156,10 +155,8 @@ const parse = (
       }
     }
     if (token.kind === "word") {
-      const bound = vars.get(token.text);
-      if (bound !== undefined) return new Set(bound);
       throw new QueryError(
-        `"${token.text}" is not a variable defined above or a function; regexes go in backticks, functions are node(...), children(...) and delete(...)`,
+        `"${token.text}" is not a function; regexes go in backticks, functions are node(...), children(...) and delete(...)`,
       );
     }
     throw new QueryError("Expected a regex, node(...), children(...) or (...)");
@@ -192,14 +189,12 @@ const parse = (
   return result;
 };
 
-// Runs a query over the sequences. vars holds named sets a query can use by
-// name, as a script's var statements define them. An error is returned, not
-// thrown, so a view can show it while the query is being typed.
+// Runs a query over the sequences. An error is returned, not thrown, so a view
+// can show it while the query is being typed.
 export const runQuery = (
   query: string,
   sequences: Sequence[],
   texts: Map<string, string>,
-  vars: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
 ): QueryResult => {
   if (query.trim() === "") {
     return {
@@ -212,7 +207,7 @@ export const runQuery = (
   try {
     return {
       kind: "ok",
-      ids: parse(tokenize(query), sequences, texts, vars, deletes),
+      ids: parse(tokenize(query), sequences, texts, deletes),
       deletes,
     };
   } catch (error) {

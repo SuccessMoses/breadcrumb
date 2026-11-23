@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { checkScript, sequenceTexts } from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
@@ -21,13 +20,6 @@ const active = computed(() =>
   workspace.state.scripts.find((s) => s.id === activeId.value),
 );
 
-// The result of the active script, with each rule's matching sequences
-const texts = computed(() => sequenceTexts(workspace.state.sequences));
-const check = computed(() =>
-  active.value === undefined
-    ? undefined
-    : checkScript(active.value.code, workspace.state.sequences, texts.value),
-);
 const host = ref<HTMLElement>();
 let editor: ScriptEditor | undefined;
 
@@ -128,10 +120,12 @@ const deleteActive = () => {
       </div>
 
       <div
-        v-if="check?.kind === 'error'"
-        class="px-3 py-1 text-xs text-red-400 border-b border-surface-700"
+        v-if="active !== undefined"
+        class="px-3 py-1 text-xs text-surface-400 border-b border-surface-700"
       >
-        {{ check.message }}
+        Runs in JavaScript, once per sequence, with 2 seconds at most. The
+        sequence arrives as the string input. Each line printed to stdout must
+        be JSON: {"name": "...", "message": "..."}.
       </div>
 
       <div

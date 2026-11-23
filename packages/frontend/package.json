@@ -7,13 +7,16 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@caido-community/breadcrumb-core": "workspace:*",
     "@caido/primevue": "0.3.3",
     "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/language": "^6.13.1",
     "@codemirror/search": "6.7.2",
     "@codemirror/state": "6.7.6",
+    "@lezer/highlight": "^1.2.5",
     "primevue": "4.1.0",
     "shared": "workspace:@caido-community/breadcrumb@*",
-    "@caido-community/breadcrumb-core": "workspace:*",
     "vue": "3.5.22"
   },
   "devDependencies": {

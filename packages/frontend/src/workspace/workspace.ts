@@ -11,6 +11,7 @@ import {
 import type { RequestTemplate, Sequence } from "shared";
 import { computed, type ComputedRef, reactive, ref, watch } from "vue";
 
+import { runScript } from "@/scripts/runScript";
 import type { FrontendSDK } from "@/types";
 
 export { DEFAULT_COLLECTION_ID } from "@caido-community/breadcrumb-core";
@@ -110,6 +111,7 @@ export const createWorkspace = (
         const id = window.setTimeout(run, delayMs);
         return () => window.clearTimeout(id);
       },
+      runScript,
     },
     focusStep,
     focusTemplate,

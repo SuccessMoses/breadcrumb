@@ -19,7 +19,7 @@ const sequenceById = computed(
 const timeOf = (time: number) => new Date(time).toLocaleString();
 
 // Everything an entry can be searched by: its date and time as shown, as a
-// timestamp and as ISO text, then its script, sequence id, rule and message
+// timestamp and as ISO text, then its script, sequence id, name and message
 const haystackOf = (log: (typeof workspace.state.logs)[number]) =>
   [
     timeOf(log.time),
@@ -27,7 +27,7 @@ const haystackOf = (log: (typeof workspace.state.logs)[number]) =>
     new Date(log.time).toISOString(),
     log.scriptName,
     log.sequenceId,
-    log.ruleName,
+    log.name,
     log.message,
   ]
     .join("\n")
@@ -69,7 +69,7 @@ const copyAll = async () => {
     <div class="flex items-center gap-2">
       <InputText
         v-model="search"
-        placeholder="Search date, script, sequence id, rule or message"
+        placeholder="Search date, script, sequence id, name or message"
         size="small"
         class="flex-1 min-w-0"
       />
@@ -95,8 +95,7 @@ const copyAll = async () => {
     <div class="text-sm text-surface-400 px-1">
       <template v-if="search.trim() === ''">
         {{ totalCount }} {{ totalCount === 1 ? "entry" : "entries" }}, newest
-        first. Each Extend logs the message of the first rule a new sequence
-        matches.
+        first. Each Extend logs what the scripts print for each new sequence.
       </template>
       <template v-else>
         {{ rows.length }} of {{ totalCount }} entries match. Copy all copies the
@@ -119,7 +118,7 @@ const copyAll = async () => {
       <div class="text-sm">{{ row.log.message }}</div>
       <div class="text-xs text-surface-400 font-mono break-all">
         {{ timeOf(row.log.time) }} &middot; {{ row.log.scriptName }} &middot;
-        {{ row.log.ruleName }} &middot;
+        {{ row.log.name }} &middot;
         {{
           row.sequence === undefined
             ? `sequence ${row.log.sequenceId} (removed)`
