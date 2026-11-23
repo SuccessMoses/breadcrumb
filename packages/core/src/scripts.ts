@@ -135,8 +135,7 @@ const parseStatement = (
 export type ScriptRule = { name: string; message: string; ids: Set<string> };
 
 export type ScriptCheck =
-  | { kind: "ok"; rules: ScriptRule[]; deletes: Set<string> }
-  | { kind: "error"; message: string };
+  { kind: "ok"; rules: ScriptRule[] } | { kind: "error"; message: string };
 
 // Evaluates one script over all the sequences. Statements run top to bottom, so
 // a var is only usable below its own statement. A script with an error gives
@@ -151,7 +150,6 @@ export const checkScript = (
 
   const vars = new Map<string, Set<string>>();
   const rules: ScriptRule[] = [];
-  const deletes = new Set<string>();
   for (const statement of split.statements) {
     const parsed = parseStatement(statement.text);
     if (parsed.kind === "error") {
@@ -173,7 +171,12 @@ export const checkScript = (
         message: `Line ${statement.line}: ${result.message}`,
       };
     }
-    for (const id of result.deletes) deletes.add(id);
+    if (result.deletes.size > 0) {
+      return {
+        kind: "error",
+        message: `Line ${statement.line}: delete(...) is not allowed in a script`,
+      };
+    }
     if (parsed.kind === "var") {
       vars.set(parsed.name, result.ids);
     } else {
@@ -190,7 +193,7 @@ export const checkScript = (
       });
     }
   }
-  return { kind: "ok", rules, deletes };
+  return { kind: "ok", rules };
 };
 
 export type NewLog = Omit<LogEntry, "id" | "time">;
@@ -203,17 +206,15 @@ export const logMatches = (
   scripts: Script[],
   sequences: Sequence[],
   sequenceIds: string[],
-): { logs: NewLog[]; deletes: Set<string> } => {
+): NewLog[] => {
   const texts = sequenceTexts(sequences);
   const rules: (ScriptRule & { scriptName: string })[] = [];
-  const deletes = new Set<string>();
   for (const script of scripts) {
     const check = checkScript(script.code, sequences, texts);
     if (check.kind === "ok") {
       for (const rule of check.rules) {
         rules.push({ ...rule, scriptName: script.name });
       }
-      for (const id of check.deletes) deletes.add(id);
     }
   }
   const logs: NewLog[] = [];
@@ -228,7 +229,7 @@ export const logMatches = (
       });
     }
   }
-  return { logs, deletes };
+  return logs;
 };
 
 const isText = (value: unknown): value is string => typeof value === "string";
