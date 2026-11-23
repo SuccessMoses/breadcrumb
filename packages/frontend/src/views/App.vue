@@ -7,6 +7,7 @@ import Tabs from "primevue/tabs";
 import { onMounted, onUnmounted, ref, shallowRef } from "vue";
 
 import { Backup } from "./Backup";
+import { Logs } from "./Logs";
 import { Requests } from "./Requests";
 import { Rules } from "./Rules";
 import { Sequences } from "./Sequences";
@@ -38,7 +39,7 @@ onMounted(async () => {
 // Tab moves to the next view on the right, Shift+Tab to the one on the left,
 // wrapping at the ends, unless focus is in a field or the editor, where Tab keeps
 // its usual job
-const TAB_ORDER = ["requests", "sequences", "tree", "rules", "backup"];
+const TAB_ORDER = ["requests", "sequences", "tree", "rules", "logs", "backup"];
 
 const isTypingTarget = (target: unknown) =>
   target instanceof HTMLElement &&
@@ -91,6 +92,7 @@ const showTemplate = () => {
       <Tab value="sequences">Sequences</Tab>
       <Tab value="tree">Tree</Tab>
       <Tab value="rules">Rules</Tab>
+      <Tab value="logs">Logs</Tab>
       <Tab value="backup">Backup</Tab>
     </TabList>
     <TabPanels class="flex-1 min-h-0 p-0">
@@ -111,6 +113,9 @@ const showTemplate = () => {
       /></TabPanel>
       <TabPanel value="rules" class="h-full"
         ><Rules :workspace="workspace"
+      /></TabPanel>
+      <TabPanel value="logs" class="h-full"
+        ><Logs :workspace="workspace"
       /></TabPanel>
       <TabPanel value="backup" class="h-full"
         ><Backup :workspace="workspace"

@@ -7,6 +7,7 @@ export * from "./notes";
 export * from "./renderRequest";
 export * from "./query";
 export * from "./rules";
+export * from "./scripts";
 export * from "./templateJson";
 export * from "./sequenceText";
 export * from "./uploads";

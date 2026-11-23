@@ -15,7 +15,15 @@ import {
   stripNotes,
 } from "./notes";
 import { defaultRequest, expandTemplate } from "./renderRequest";
-import { restoreSeqRules, type SeqRule } from "./rules";
+import {
+  LOG_LIMIT,
+  type LogEntry,
+  logMatches,
+  restoreLogs,
+  restoreScripts,
+  type Script,
+  scriptsFromRules,
+} from "./scripts";
 import {
   parseTemplatesJson,
   type TemplateItem,
@@ -67,7 +75,8 @@ export type WorkspaceState = {
   texts: Record<string, string>;
   collections: Collection[];
   templateCollection: Record<string, string>;
-  seqRules: SeqRule[];
+  scripts: Script[];
+  logs: LogEntry[];
 };
 
 // Outcome of rendering one step: its text, its response if it was sent, and
@@ -193,12 +202,13 @@ export type CoreWorkspace = {
   createCollection: (name: string) => void;
   isCollectionEmpty: (collectionId: string) => boolean;
   deleteCollection: (collectionId: string) => void;
-  createSeqRule: (name: string, pattern: string) => void;
-  updateSeqRule: (
-    ruleId: string,
-    change: { name?: string; pattern?: string },
+  createScript: () => string;
+  updateScript: (
+    scriptId: string,
+    change: { name?: string; code?: string },
   ) => void;
-  deleteSeqRule: (ruleId: string) => void;
+  deleteScript: (scriptId: string) => void;
+  clearLogs: () => void;
   moveTemplate: (templateId: string, collectionId: string) => void;
   templateText: (templateId: string) => string | undefined;
   setTemplateText: (templateId: string, text: string) => void;
@@ -218,7 +228,8 @@ export const emptyState = (): WorkspaceState => ({
   texts: {},
   collections: [],
   templateCollection: {},
-  seqRules: [],
+  scripts: [],
+  logs: [],
 });
 
 const restoreFolds = (value: unknown): Folds => {
@@ -483,9 +494,14 @@ export const createCore = ({
       state.texts = restoreStrings(
         hasKey(saved, "texts") ? saved.texts : undefined,
       );
-      state.seqRules = restoreSeqRules(
-        hasKey(saved, "seqRules") ? saved.seqRules : undefined,
-      );
+      // Saves from before scripts kept rules, which become one script each
+      const legacyRules = hasKey(saved, "seqRules")
+        ? saved.seqRules
+        : undefined;
+      state.scripts = hasKey(saved, "scripts")
+        ? restoreScripts(saved.scripts)
+        : scriptsFromRules(legacyRules);
+      state.logs = restoreLogs(hasKey(saved, "logs") ? saved.logs : undefined);
       // Captures still kept per template move into the template text, once.
       // Remove this when no project file has a rules entry left.
       const legacy = restoreLegacyRules(
@@ -529,7 +545,8 @@ export const createCore = ({
     texts: state.texts,
     collections: state.collections,
     templateCollection: state.templateCollection,
-    seqRules: state.seqRules,
+    scripts: state.scripts,
+    logs: state.logs,
   });
   const save = () => adapter.save(snapshot());
 
@@ -945,6 +962,7 @@ export const createCore = ({
       state.sequences.push(child);
       children.push({ id: child.id, failure: result.failure });
     }
+    logNewSequences(children.map((child) => child.id));
     return { kind: "ok", children };
   };
 
@@ -1219,26 +1237,47 @@ export const createCore = ({
     state.collections = state.collections.filter((c) => c.id !== collectionId);
   };
 
-  const createSeqRule = (name: string, pattern: string) => {
-    const trimmed = name.trim();
-    if (trimmed === "") return;
-    state.seqRules.push({ id: newId(), name: trimmed, pattern });
+  // A new script with no code, named by its place in the list
+  const createScript = () => {
+    const id = newId();
+    state.scripts.push({
+      id,
+      name: `Script ${state.scripts.length + 1}`,
+      code: "",
+    });
+    return id;
   };
 
-  const updateSeqRule = (
-    ruleId: string,
-    change: { name?: string; pattern?: string },
+  const updateScript = (
+    scriptId: string,
+    change: { name?: string; code?: string },
   ) => {
-    const rule = state.seqRules.find((r) => r.id === ruleId);
-    if (rule === undefined) return;
+    const script = state.scripts.find((s) => s.id === scriptId);
+    if (script === undefined) return;
     if (change.name !== undefined && change.name.trim() !== "") {
-      rule.name = change.name.trim();
+      script.name = change.name.trim();
     }
-    if (change.pattern !== undefined) rule.pattern = change.pattern;
+    if (change.code !== undefined) script.code = change.code;
   };
 
-  const deleteSeqRule = (ruleId: string) => {
-    state.seqRules = state.seqRules.filter((r) => r.id !== ruleId);
+  const deleteScript = (scriptId: string) => {
+    state.scripts = state.scripts.filter((s) => s.id !== scriptId);
+  };
+
+  const clearLogs = () => {
+    state.logs = [];
+  };
+
+  // Runs the scripts over sequences just created, and logs what they match
+  const logNewSequences = (sequenceIds: string[]) => {
+    const found = logMatches(state.scripts, state.sequences, sequenceIds);
+    const time = Date.now();
+    for (const entry of found) {
+      state.logs.push({ id: newId(), time, ...entry });
+    }
+    if (state.logs.length > LOG_LIMIT) {
+      state.logs.splice(0, state.logs.length - LOG_LIMIT);
+    }
   };
 
   const moveTemplate = (templateId: string, collectionId: string) => {
@@ -1330,9 +1369,10 @@ export const createCore = ({
     createCollection,
     isCollectionEmpty,
     deleteCollection,
-    createSeqRule,
-    updateSeqRule,
-    deleteSeqRule,
+    createScript,
+    updateScript,
+    deleteScript,
+    clearLogs,
     moveTemplate,
     templateText,
     setTemplateText,
