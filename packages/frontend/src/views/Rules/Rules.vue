@@ -2,6 +2,7 @@
 import { runQuery, sequenceTexts } from "@caido-community/breadcrumb-core";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
+import Textarea from "primevue/textarea";
 import { computed, type Directive, ref } from "vue";
 
 import type { Workspace } from "@/workspace/workspace";
@@ -9,37 +10,11 @@ import type { Workspace } from "@/workspace/workspace";
 const { workspace } = defineProps<{ workspace: Workspace }>();
 
 // Sizes a textarea to its content, when it mounts and whenever its value changes
-// A hidden tab measures as zero height, so the box is fitted again whenever its
-// width changes, which is also when the tab is first shown
-const fit = (el: HTMLTextAreaElement) => {
+const fit = (el: HTMLElement) => {
   el.style.height = "auto";
   el.style.height = `${el.scrollHeight}px`;
 };
-const observers = new WeakMap<HTMLTextAreaElement, ResizeObserver>();
-const vFit: Directive<HTMLTextAreaElement> = {
-  mounted(el) {
-    fit(el);
-    let width = el.clientWidth;
-    // eslint-disable-next-line compat/compat -- Caido runs in Chromium, which has it
-    const observer = new ResizeObserver(() => {
-      if (el.clientWidth === width) return;
-      width = el.clientWidth;
-      fit(el);
-    });
-    observer.observe(el);
-    observers.set(el, observer);
-  },
-  updated: fit,
-  unmounted(el) {
-    observers.get(el)?.disconnect();
-    observers.delete(el);
-  },
-};
-const fitOnInput = (event: Event) => fit(event.target as HTMLTextAreaElement);
-const repatternFromInput = (ruleId: string, event: Event) => {
-  repatternRule(ruleId, (event.target as HTMLTextAreaElement).value);
-  fitOnInput(event);
-};
+const vFit: Directive<HTMLElement> = { mounted: fit, updated: fit };
 
 // A new rule, held in the form until it is added
 const newName = ref("");
@@ -93,13 +68,12 @@ const rows = computed(() =>
           class="w-40"
           @keydown.enter="addRule"
         />
-        <textarea
+        <Textarea
           v-model="newPattern"
           v-fit
           placeholder="Query, e.g. node(abc123) OR `POST /api`"
           rows="1"
-          class="p-inputtext flex-1 min-w-0 font-mono break-all overflow-hidden resize-none"
-          @input="fitOnInput"
+          class="flex-1 min-w-0 font-mono break-all overflow-hidden"
           @keydown.enter.prevent="addRule"
         />
         <Button
@@ -128,12 +102,12 @@ const rows = computed(() =>
           class="w-40"
           @update:model-value="renameRule(row.rule.id, $event)"
         />
-        <textarea
+        <Textarea
           v-fit
-          :value="row.rule.pattern"
+          :model-value="row.rule.pattern"
           rows="1"
-          class="p-inputtext flex-1 min-w-0 font-mono break-all overflow-hidden resize-none"
-          @input="repatternFromInput(row.rule.id, $event)"
+          class="flex-1 min-w-0 font-mono break-all overflow-hidden"
+          @update:model-value="repatternRule(row.rule.id, $event)"
         />
         <Button
           icon="fas fa-trash"
