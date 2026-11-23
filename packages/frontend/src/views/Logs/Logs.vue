@@ -2,9 +2,12 @@
 import Button from "primevue/button";
 import { computed } from "vue";
 
+import { useSDK } from "@/plugins/sdk";
 import type { Workspace } from "@/workspace/workspace";
 
 const { workspace } = defineProps<{ workspace: Workspace }>();
+
+const sdk = useSDK();
 
 const sequenceById = computed(
   () => new Map(workspace.state.sequences.map((s) => [s.id, s])),
@@ -22,6 +25,20 @@ const rows = computed(() =>
 );
 
 const timeOf = (time: number) => new Date(time).toLocaleString();
+
+// The distinct sequence ids in list order, as "id1, id2, id3" to paste into
+// node(...) or delete(...)
+const copyAll = async () => {
+  const ids = [...new Set(rows.value.map((row) => row.log.sequenceId))];
+  try {
+    await navigator.clipboard.writeText(ids.join(", "));
+    sdk.window.showToast(`Copied ${ids.length} id(s)`, { variant: "success" });
+  } catch {
+    sdk.window.showToast("Could not copy to the clipboard", {
+      variant: "error",
+    });
+  }
+};
 </script>
 
 <template>
@@ -32,6 +49,14 @@ const timeOf = (time: number) => new Date(time).toLocaleString();
         first. Each Extend logs the message of the first rule a new sequence
         matches.
       </div>
+      <Button
+        label="Copy all"
+        icon="fas fa-copy"
+        size="small"
+        text
+        :disabled="rows.length === 0"
+        @click="copyAll"
+      />
       <Button
         label="Clear"
         icon="fas fa-eraser"

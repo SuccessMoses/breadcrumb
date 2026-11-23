@@ -7,6 +7,8 @@ import { compilePattern } from "./sequenceText";
 //   `regex`             sequences whose text matches the regex
 //   node(id, ...)       the sequences with these ids
 //   children(id, ...)   the immediate children of these sequences
+//   delete(id, ...)     the sequences with these ids and everything under them,
+//                       deleted only when a script runs; matches nothing
 //   ( query )           grouping
 // Terms are joined by AND (binds tighter) and OR. An empty query matches everything.
 
@@ -48,8 +50,10 @@ const tokenize = (query: string): Token[] => {
   return tokens;
 };
 
+// deletes holds the ids that delete(...) names, for the caller to act on
 export type QueryResult =
-  { kind: "ok"; ids: Set<string> } | { kind: "error"; message: string };
+  | { kind: "ok"; ids: Set<string>; deletes: Set<string> }
+  | { kind: "error"; message: string };
 
 // texts holds each sequence's stringified text, built once per change to the sequences
 export const sequenceTexts = (sequences: Sequence[]) =>
@@ -62,6 +66,7 @@ const parse = (
   sequences: Sequence[],
   texts: Map<string, string>,
   vars: ReadonlyMap<string, ReadonlySet<string>>,
+  deletes: Set<string>,
 ): Set<string> => {
   let position = 0;
 
@@ -133,6 +138,10 @@ const parse = (
     }
     if (token.kind === "word" && isPunct("(")) {
       if (token.text === "node") return new Set(idList());
+      if (token.text === "delete") {
+        for (const id of idList()) deletes.add(id);
+        return new Set();
+      }
       if (token.text === "children") {
         const parents = new Set(idList());
         return new Set(
@@ -150,7 +159,7 @@ const parse = (
       const bound = vars.get(token.text);
       if (bound !== undefined) return new Set(bound);
       throw new QueryError(
-        `"${token.text}" is not a variable defined above or a function; regexes go in backticks, functions are node(...) and children(...)`,
+        `"${token.text}" is not a variable defined above or a function; regexes go in backticks, functions are node(...), children(...) and delete(...)`,
       );
     }
     throw new QueryError("Expected a regex, node(...), children(...) or (...)");
@@ -193,12 +202,18 @@ export const runQuery = (
   vars: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
 ): QueryResult => {
   if (query.trim() === "") {
-    return { kind: "ok", ids: new Set(sequences.map((s) => s.id)) };
+    return {
+      kind: "ok",
+      ids: new Set(sequences.map((s) => s.id)),
+      deletes: new Set(),
+    };
   }
+  const deletes = new Set<string>();
   try {
     return {
       kind: "ok",
-      ids: parse(tokenize(query), sequences, texts, vars),
+      ids: parse(tokenize(query), sequences, texts, vars, deletes),
+      deletes,
     };
   } catch (error) {
     if (error instanceof QueryError) {

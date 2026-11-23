@@ -963,7 +963,12 @@ export const createCore = ({
       children.push({ id: child.id, failure: result.failure });
     }
     logNewSequences(children.map((child) => child.id));
-    return { kind: "ok", children };
+    // A script may have deleted some of the children just made
+    const kept = new Set(state.sequences.map((s) => s.id));
+    return {
+      kind: "ok",
+      children: children.filter((child) => kept.has(child.id)),
+    };
   };
 
   // Extends one sequence and selects the new child. Resolves to an error message
@@ -1268,16 +1273,22 @@ export const createCore = ({
     state.logs = [];
   };
 
-  // Runs the scripts over sequences just created, and logs what they match
+  // Runs the scripts over sequences just created, logs what they match, and
+  // deletes the sequences their delete(...) terms name
   const logNewSequences = (sequenceIds: string[]) => {
-    const found = logMatches(state.scripts, state.sequences, sequenceIds);
+    const { logs, deletes } = logMatches(
+      state.scripts,
+      state.sequences,
+      sequenceIds,
+    );
     const time = Date.now();
-    for (const entry of found) {
+    for (const entry of logs) {
       state.logs.push({ id: newId(), time, ...entry });
     }
     if (state.logs.length > LOG_LIMIT) {
       state.logs.splice(0, state.logs.length - LOG_LIMIT);
     }
+    for (const id of deletes) deleteSequence(id);
   };
 
   const moveTemplate = (templateId: string, collectionId: string) => {

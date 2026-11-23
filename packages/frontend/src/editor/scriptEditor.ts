@@ -13,14 +13,16 @@ import {
 // alternative that matches at a position wins, so a regex or a string is never
 // read as code inside it
 const TOKEN =
-  /`[^`]*`|"(?:[^"\\]|\\.)*"|\b(?:var|rule)\b|\b(?:AND|OR)\b|\b(?:node|children)(?=\s*\()|\b(?:name|message)(?=\s*=)|\b[A-Za-z_][A-Za-z0-9_]*(?=\s*=)|;/g;
+  /`[^`]*`|"(?:[^"\\]|\\.)*"|\b(?:var|rule)\b|\b(?:AND|OR)\b|\b(?:node|children|delete)(?=\s*\()|\b(?:name|message)(?=\s*=)|\b[A-Za-z_][A-Za-z0-9_]*(?=\s*=)|;/g;
 
 const classFor = (token: string): string => {
   if (token.startsWith("`")) return "cm-script-regex";
   if (token.startsWith('"')) return "cm-script-string";
   if (token === "var" || token === "rule") return "cm-script-keyword";
   if (token === "AND" || token === "OR") return "cm-script-operator";
-  if (token === "node" || token === "children") return "cm-script-function";
+  if (token === "node" || token === "children" || token === "delete") {
+    return "cm-script-function";
+  }
   if (token === "name" || token === "message") return "cm-script-attribute";
   if (token === ";") return "cm-script-punct";
   return "cm-script-name";
