@@ -28,15 +28,6 @@ const check = computed(() =>
     ? undefined
     : checkScript(active.value.code, workspace.state.sequences, texts.value),
 );
-const ruleRows = computed(() =>
-  check.value?.kind !== "ok"
-    ? []
-    : check.value.rules.map((rule) => ({
-        rule,
-        matches: workspace.state.sequences.filter((s) => rule.ids.has(s.id)),
-      })),
-);
-
 const host = ref<HTMLElement>();
 let editor: ScriptEditor | undefined;
 
