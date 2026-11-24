@@ -213,7 +213,8 @@ export type CoreWorkspace = {
     change: { name?: string; code?: string },
   ) => void;
   deleteScript: (scriptId: string) => void;
-  clearLogs: () => void;
+  removeLogs: (ids: string[]) => void;
+  deleteLoggedSequences: (sequenceIds: string[]) => number;
   moveTemplate: (templateId: string, collectionId: string) => void;
   templateText: (templateId: string) => string | undefined;
   setTemplateText: (templateId: string, text: string) => void;
@@ -1269,8 +1270,21 @@ export const createCore = ({
     state.scripts = state.scripts.filter((s) => s.id !== scriptId);
   };
 
-  const clearLogs = () => {
-    state.logs = [];
+  // Removes the log entries with these ids
+  const removeLogs = (ids: string[]) => {
+    const gone = new Set(ids);
+    state.logs = state.logs.filter((log) => !gone.has(log.id));
+  };
+
+  // Deletes the sequences and everything under them, then drops the log entries of
+  // sequences that no longer exist. Returns how many sequences were removed.
+  const deleteLoggedSequences = (sequenceIds: string[]) => {
+    let removed = 0;
+    for (const id of sequenceIds) removed += deleteSequence(id);
+    state.logs = state.logs.filter((log) =>
+      state.sequences.some((sequence) => sequence.id === log.sequenceId),
+    );
+    return removed;
   };
 
   // Runs the scripts over each sequence just created, in order. Each script's
@@ -1390,7 +1404,8 @@ export const createCore = ({
     createScript,
     updateScript,
     deleteScript,
-    clearLogs,
+    removeLogs,
+    deleteLoggedSequences,
     moveTemplate,
     templateText,
     setTemplateText,

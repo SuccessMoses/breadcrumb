@@ -62,6 +62,29 @@ const copyAll = async () => {
     });
   }
 };
+// Clear removes the entries shown: all of them when the search is empty
+const clearShown = () => {
+  workspace.removeLogs(rows.value.map((row) => row.log.id));
+};
+
+// Delete removes the sequences of the entries shown, with everything under them,
+// and their log entries. With an empty search that is every logged sequence.
+const deleteShown = () => {
+  const ids = [...new Set(rows.value.map((row) => row.log.sequenceId))];
+  const scope =
+    search.value.trim() === ""
+      ? `all ${ids.length} logged sequence(s)`
+      : `the ${ids.length} sequence(s) of the search`;
+  const confirmed = window.confirm(
+    `Delete ${scope} and everything under them? Their log entries are removed too.`,
+  );
+  if (!confirmed) return;
+  workspace.checkpoint();
+  const removed = workspace.deleteLoggedSequences(ids);
+  sdk.window.showToast(`Deleted ${removed} sequence(s)`, {
+    variant: "success",
+  });
+};
 </script>
 
 <template>
@@ -85,10 +108,18 @@ const copyAll = async () => {
         label="Clear"
         icon="fas fa-eraser"
         size="small"
+        text
+        :disabled="rows.length === 0"
+        @click="clearShown"
+      />
+      <Button
+        label="Delete"
+        icon="fas fa-trash"
+        size="small"
         severity="danger"
         text
-        :disabled="totalCount === 0"
-        @click="workspace.clearLogs()"
+        :disabled="rows.length === 0"
+        @click="deleteShown"
       />
     </div>
 
@@ -98,8 +129,8 @@ const copyAll = async () => {
         first. Each Extend logs what the scripts print for each new sequence.
       </template>
       <template v-else>
-        {{ rows.length }} of {{ totalCount }} entries match. Copy all copies the
-        sequence ids of these.
+        {{ rows.length }} of {{ totalCount }} entries match. Copy all, Clear and
+        Delete act on these.
       </template>
     </div>
 
