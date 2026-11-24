@@ -646,22 +646,35 @@ const growSources = ref<Sequence[]>([]);
 // The picks and ready-only setting are kept in this browser, so a reload does not
 // clear them. Stale template ids are dropped when the popup opens.
 const EXTEND_PICKS_KEY = "breadcrumb.extendPicks";
-const rememberedPicks = (): { types: string[]; readyOnly: boolean } => {
+const EXTEND_DEFAULTS = {
+  types: [] as string[],
+  readyOnly: false,
+  prune: false,
+  pauseEvery: 0,
+};
+const rememberedPicks = (): typeof EXTEND_DEFAULTS => {
   try {
     const raw = window.localStorage.getItem(EXTEND_PICKS_KEY);
     const value = raw === null ? undefined : (JSON.parse(raw) as unknown);
-    if (typeof value !== "object" || value === null) {
-      return { types: [], readyOnly: false };
-    }
-    const { types, readyOnly } = value as Record<string, unknown>;
+    if (typeof value !== "object" || value === null)
+      return { ...EXTEND_DEFAULTS };
+    const { types, readyOnly, prune, pauseEvery } = value as Record<
+      string,
+      unknown
+    >;
     return {
       types: Array.isArray(types)
         ? types.filter((id): id is string => typeof id === "string")
         : [],
       readyOnly: readyOnly === true,
+      prune: prune === true,
+      pauseEvery:
+        typeof pauseEvery === "number" && pauseEvery > 0
+          ? Math.floor(pauseEvery)
+          : 0,
     };
   } catch {
-    return { types: [], readyOnly: false };
+    return { ...EXTEND_DEFAULTS };
   }
 };
 const remembered = rememberedPicks();
@@ -669,8 +682,12 @@ const growTypes = ref<string[]>(remembered.types);
 const growSearch = ref("");
 const growGenerations = ref(1);
 const growReadyOnly = ref(remembered.readyOnly);
+// Prune deletes the new sequences a script matches. Pause for gc waits after this
+// many requests (0 is never), so the trash can be deleted before the run goes on.
+const growPrune = ref(remembered.prune);
+const growPauseEvery = ref(remembered.pauseEvery);
 watch(
-  [growTypes, growReadyOnly],
+  [growTypes, growReadyOnly, growPrune, growPauseEvery],
   () => {
     try {
       window.localStorage.setItem(
@@ -678,6 +695,8 @@ watch(
         JSON.stringify({
           types: growTypes.value,
           readyOnly: growReadyOnly.value,
+          prune: growPrune.value,
+          pauseEvery: growPauseEvery.value,
         }),
       );
     } catch {
@@ -688,6 +707,25 @@ watch(
 );
 const growRunning = ref(false);
 const growStopRequested = ref(false);
+const growPaused = ref(false);
+// Resolves the pause the run is waiting on
+let resumeGrow: (() => void) | undefined;
+const pauseGrow = () =>
+  // eslint-disable-next-line compat/compat -- the run waits for the person to resume
+  new Promise<void>((resolve) => {
+    growPaused.value = true;
+    resumeGrow = resolve;
+  });
+const resumeGrowRun = () => {
+  growPaused.value = false;
+  resumeGrow?.();
+  resumeGrow = undefined;
+};
+// Stop also ends a pause, so a paused run stops at once
+const stopGrow = () => {
+  growStopRequested.value = true;
+  resumeGrowRun();
+};
 
 const growLabel = computed(() => {
   const only = growSources.value[0];
@@ -821,16 +859,22 @@ const runGrow = async () => {
     generations: generations.value,
     readyOnly: growReadyOnly.value,
     stopped: () => growStopRequested.value,
+    prune: growPrune.value,
+    pauseEvery: Math.max(0, Math.floor(growPauseEvery.value) || 0),
+    pause: pauseGrow,
   });
   growRunning.value = false;
+  growPaused.value = false;
   // Open the sources so the new children are visible
   const sourceIds = new Set(sources.map((source) => source.id));
   collapsed.value = new Set(
     [...collapsed.value].filter((id) => !sourceIds.has(id)),
   );
   const stopped = result.stopped ? " (stopped)" : "";
+  const matched =
+    result.matched > 0 ? `, deleted ${result.matched} matched` : "";
   sdk.window.showToast(
-    `Created ${result.created} sequence(s), ${result.pruned} failed${stopped}`,
+    `Created ${result.created} sequence(s), ${result.pruned} failed${matched}${stopped}`,
     { variant: result.created > 0 ? "success" : "error" },
   );
   growDialog.value = false;
@@ -1347,6 +1391,35 @@ children(abc123) OR `(?s)^POST /api/v4/users/login`</pre>
             <input v-model="growReadyOnly" type="checkbox" />
             Ready only
           </label>
+          <label class="flex items-center gap-2">
+            <input
+              v-model="growPrune"
+              type="checkbox"
+              :disabled="growRunning"
+            />
+            Prune matches
+          </label>
+          <label class="flex items-center gap-2">
+            Pause for gc
+            <input
+              v-model.number="growPauseEvery"
+              type="number"
+              min="0"
+              placeholder="off"
+              :disabled="growRunning"
+              class="w-20 rounded border border-surface-600 bg-surface-900 px-2 py-1"
+            />
+          </label>
+        </div>
+        <div
+          v-if="growPaused"
+          class="flex items-center justify-between gap-2 rounded surface-800 p-3 text-sm text-surface-200"
+        >
+          <span>
+            Paused after {{ growPauseEvery }} request(s). Delete the Extend
+            sequences you no longer need, then resume.
+          </span>
+          <Button label="Resume" size="small" @click="resumeGrowRun" />
         </div>
         <InputText
           v-model="growSearch"
@@ -1438,7 +1511,7 @@ children(abc123) OR `(?s)^POST /api/v4/users/login`</pre>
             :disabled="growStopRequested"
             size="small"
             severity="secondary"
-            @click="growStopRequested = true"
+            @click="stopGrow"
           />
           <Button
             v-else

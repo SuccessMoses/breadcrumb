@@ -164,14 +164,24 @@ export type CoreWorkspace = {
     parentId: string,
     templateId: string,
   ) => Promise<string | undefined>;
-  // Breadth-first growth from each source, with pruning on failure
+  // Breadth-first growth from each source, with pruning on failure. With prune, a
+  // new sequence a script matches is deleted. Every pauseEvery requests, pause()
+  // is awaited before the next request, until it resolves.
   grow: (options: {
     sequenceIds: string[];
     templateIds: string[];
     generations: number;
     readyOnly: boolean;
     stopped: () => boolean;
-  }) => Promise<{ created: number; pruned: number; stopped: boolean }>;
+    prune?: boolean;
+    pauseEvery?: number;
+    pause?: () => Promise<void>;
+  }) => Promise<{
+    created: number;
+    pruned: number;
+    matched: number;
+    stopped: boolean;
+  }>;
   deleteSequence: (id: string) => number;
   rerenderSequence: (id: string) => Promise<{
     sequences: number;
@@ -435,6 +445,9 @@ const restoreSequences = (
     }
     return [];
   });
+
+// Thrown inside grow when the person stops it while it is paused
+class GrowStopped extends Error {}
 
 export const createCore = ({
   state,
@@ -861,6 +874,7 @@ export const createCore = ({
     before: SequenceStep[],
     fixed: Record<string, string> = {},
     softFailure = false,
+    beforeSend?: () => Promise<void>,
   ): Promise<RenderResult> => {
     const fillings = fillTemplate(text, before, fixed);
     const captures = captureLines(text);
@@ -871,6 +885,7 @@ export const createCore = ({
       let failure: string | undefined;
       // Whether this copy of the template is sent is set by its own command line
       if (sendWhenRendered(text)) {
+        await beforeSend?.();
         const sent = await adapter.sendRaw(filling.request);
         if (sent.kind === "Error") {
           if (!softFailure) return { kind: "error", message: sent.error };
@@ -919,8 +934,16 @@ export const createCore = ({
   const extendOne = async (
     parentId: string,
     templateId: string,
+    options: { prune?: boolean; beforeSend?: () => Promise<void> } = {},
   ): Promise<
-    | { kind: "ok"; children: { id: string; failure: string | undefined }[] }
+    | {
+        kind: "ok";
+        children: {
+          id: string;
+          failure: string | undefined;
+          matched: boolean;
+        }[];
+      }
     | { kind: "error"; message: string }
   > => {
     const parent = state.sequences.find((s) => s.id === parentId);
@@ -940,6 +963,8 @@ export const createCore = ({
         inherited.templateId,
         prefix,
         inherited.choice,
+        false,
+        options.beforeSend,
       );
       if (rendered.kind === "error") return rendered;
       const first = rendered.results[0];
@@ -951,7 +976,14 @@ export const createCore = ({
     if (text === undefined)
       return { kind: "error", message: "Missing template" };
     // A failed request still makes its child, with the error as the response
-    const rendered = await renderStep(text, templateId, prefix, {}, true);
+    const rendered = await renderStep(
+      text,
+      templateId,
+      prefix,
+      {},
+      true,
+      options.beforeSend,
+    );
     if (rendered.kind === "error") return rendered;
     const children: { id: string; failure: string | undefined }[] = [];
     for (const result of rendered.results) {
@@ -968,8 +1000,17 @@ export const createCore = ({
       state.sequences.push(child);
       children.push({ id: child.id, failure: result.failure });
     }
-    await logNewSequences(children.map((child) => child.id));
-    return { kind: "ok", children };
+    const deleted = await logNewSequences(
+      children.map((child) => child.id),
+      options.prune === true,
+    );
+    return {
+      kind: "ok",
+      children: children.map((child) => ({
+        ...child,
+        matched: deleted.has(child.id),
+      })),
+    };
   };
 
   // Extends one sequence and selects the new child. Resolves to an error message
@@ -983,7 +1024,8 @@ export const createCore = ({
       adapter.notify(result.message, { variant: "error" });
       return result.message;
     }
-    const last = result.children[result.children.length - 1];
+    const kept = result.children.filter((child) => !child.matched);
+    const last = kept[kept.length - 1];
     if (last !== undefined) state.selectedSequenceId = last.id;
     const failures = result.children.flatMap((child) =>
       child.failure === undefined ? [] : [child.failure],
@@ -999,48 +1041,81 @@ export const createCore = ({
   // Breadth-first growth: each generation extends every sequence in the frontier
   // with each template. A child that fails is pruned, so its branch goes no
   // further. With readyOnly, a template is skipped where an input is missing.
-  // Stops between requests when stopped() returns true.
+  // With prune, a child a script matches is deleted and not extended further.
+  // Stops between requests when stopped() returns true, including while paused.
   const grow = async (options: {
     sequenceIds: string[];
     templateIds: string[];
     generations: number;
     readyOnly: boolean;
     stopped: () => boolean;
-  }): Promise<{ created: number; pruned: number; stopped: boolean }> => {
+    prune?: boolean;
+    pauseEvery?: number;
+    pause?: () => Promise<void>;
+  }): Promise<{
+    created: number;
+    pruned: number;
+    matched: number;
+    stopped: boolean;
+  }> => {
     let frontier = options.sequenceIds;
     let created = 0;
     let pruned = 0;
-    for (let generation = 0; generation < options.generations; generation++) {
-      const next: string[] = [];
-      for (const parentId of frontier) {
-        for (const templateId of options.templateIds) {
-          if (options.stopped()) return { created, pruned, stopped: true };
-          if (
-            options.readyOnly &&
-            missingInputs(templateId, parentId).length > 0
-          ) {
-            continue;
-          }
-          const result = await extendOne(parentId, templateId);
-          if (result.kind === "error") {
-            pruned += 1;
-            continue;
-          }
-          // A failed child stays in the tree but is not extended further
-          for (const child of result.children) {
-            if (child.failure === undefined) {
-              next.push(child.id);
-              created += 1;
-            } else {
+    let matched = 0;
+    // Requests sent since the last pause, counted before each one is sent
+    let sentSincePause = 0;
+    const beforeSend = async () => {
+      const every = options.pauseEvery ?? 0;
+      if (every > 0 && options.pause !== undefined && sentSincePause >= every) {
+        sentSincePause = 0;
+        await options.pause();
+        if (options.stopped()) throw new GrowStopped();
+      }
+      sentSincePause += 1;
+    };
+    try {
+      for (let generation = 0; generation < options.generations; generation++) {
+        const next: string[] = [];
+        for (const parentId of frontier) {
+          for (const templateId of options.templateIds) {
+            if (options.stopped()) {
+              return { created, pruned, matched, stopped: true };
+            }
+            if (
+              options.readyOnly &&
+              missingInputs(templateId, parentId).length > 0
+            ) {
+              continue;
+            }
+            const result = await extendOne(parentId, templateId, {
+              prune: options.prune === true,
+              beforeSend,
+            });
+            if (result.kind === "error") {
               pruned += 1;
+              continue;
+            }
+            // A failed child stays in the tree but is not extended further
+            for (const child of result.children) {
+              if (child.matched) {
+                matched += 1;
+              } else if (child.failure === undefined) {
+                next.push(child.id);
+                created += 1;
+              } else {
+                pruned += 1;
+              }
             }
           }
         }
+        if (next.length === 0) break;
+        frontier = next;
       }
-      if (next.length === 0) break;
-      frontier = next;
+    } catch (error) {
+      if (!(error instanceof GrowStopped)) throw error;
+      return { created, pruned, matched, stopped: true };
     }
-    return { created, pruned, stopped: false };
+    return { created, pruned, matched, stopped: false };
   };
 
   // Deletes a sequence and everything under it. The root cannot be deleted.
@@ -1289,9 +1364,12 @@ export const createCore = ({
 
   // Runs the scripts over each sequence just created, in order. Each script's
   // stdout becomes log entries. The first script that logs a match for a
-  // sequence stops the scripts for it.
-  const logNewSequences = async (sequenceIds: string[]) => {
+  // sequence stops the scripts for it. With prune, a matched sequence is deleted
+  // with its subtree and none of its log entries are kept. Returns the ids of the
+  // sequences deleted that way.
+  const logNewSequences = async (sequenceIds: string[], prune: boolean) => {
     const scripts = [...state.scripts];
+    const deleted = new Set<string>();
     for (const sequenceId of sequenceIds) {
       const sequence = state.sequences.find((s) => s.id === sequenceId);
       if (sequence === undefined) continue;
@@ -1300,6 +1378,15 @@ export const createCore = ({
         if (script.code.trim() === "") continue;
         const run = await adapter.runScript(script.code, input);
         const entries = entriesFor(script.name, sequenceId, run);
+        if (prune && isMatch(entries)) {
+          // Drops the entries of earlier scripts too, then the sequence
+          state.logs = state.logs.filter(
+            (log) => log.sequenceId !== sequenceId,
+          );
+          deleteSequence(sequenceId);
+          deleted.add(sequenceId);
+          break;
+        }
         const time = Date.now();
         for (const entry of entries) {
           state.logs.push({ id: newId(), time, ...entry });
@@ -1310,6 +1397,7 @@ export const createCore = ({
     if (state.logs.length > LOG_LIMIT) {
       state.logs.splice(0, state.logs.length - LOG_LIMIT);
     }
+    return deleted;
   };
 
   const moveTemplate = (templateId: string, collectionId: string) => {
